@@ -1,0 +1,149 @@
+# 在 GitHub Actions 上编译 LineageOS 15.1 (Android 8.1) for Samsung Galaxy On7 国行 (on7ltechn)
+#
+# 使用方法：
+#   1. 建一个 public 仓库（public 才有 4核/16GB 免费额度）
+#   2. 把本文件放到 .github/workflows/build.yml
+#   3. 仓库页 → Actions → 选 "Build LineageOS 15.1" → Run workflow
+#   4. 跑完在本次 run 页面底部 Artifacts 下载 lineage-15.1-*-on7ltechn.zip
+#
+# 说明：
+#   - 源码来自 LineageOS 官方 lineage-15.1 分支 + Galaxy-MSM8916 的设备树/vendor/内核
+#   - 设备树用 on7ltechn（国行 SM-G6000），非国际版 o7prolte
+#   - 只出 ROM zip，不含 GApps（刷完再单独刷 GApps）
+
+name: Build LineageOS 15.1 (on7ltechn)
+
+on:
+  workflow_dispatch:
+    inputs:
+      device:
+        description: 'Device codename'
+        required: false
+        default: 'on7ltechn'
+      jobs:
+        description: 'Parallel jobs (-jx)'
+        required: false
+        default: '4'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+
+    steps:
+      - name: 1. 清理磁盘并扩容到约 70GB
+        uses: easimon/maximize-build-space@master
+        with:
+          # 把工作目录放到扩容后的 /mnt 分区
+          build-root-directory: /mnt/build
+          root-reserve-mb: 4096
+          swap-size-mb: 8192
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+
+      - name: 2. 安装编译依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential ccache curl flex g++-multilib gcc-multilib \
+            git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev \
+            lib32z1-dev libelf-dev liblz4-tool libncurses5 libncurses5-dev \
+            libsdl1.2-dev libssl-dev libstdc++6 libxml2 libxml2-utils lzop \
+            pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev \
+            openjdk-8-jdk python3 unzip
+          # 旧二进制需要的兼容库，装不上也不影响（jammy 已移除部分包）
+          sudo apt-get install -y libtinfo5 libncurses5 || true
+          # Android 8.1 的脚本仍在调用 python（python2）
+          if ! command -v python >/dev/null 2>&1; then
+            sudo apt-get install -y python2 || true
+            if command -v python2 >/dev/null 2>&1; then
+              sudo ln -sf /usr/bin/python2 /usr/bin/python
+            fi
+          fi
+          java -version
+
+      - name: 3. 配置 git 和 repo
+        run: |
+          git config --global user.name  "GHA Builder"
+          git config --global user.email "builder@example.com"
+          git config --global color.ui false
+          mkdir -p ~/bin
+          curl -s https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+          echo "$HOME/bin" >> $GITHUB_PATH
+
+      - name: 4. repo init (LineageOS 15.1, 浅克隆)
+        working-directory: /mnt/build
+        run: |
+          repo init -u https://github.com/LineageOS/android.git -b lineage-15.1 --depth=1 --no-clone-bundle
+          mkdir -p .repo/local_manifests
+          curl -sL -o .repo/local_manifests/roomservice.xml \
+            https://raw.githubusercontent.com/Galaxy-MSM8916/local_manifests/master/lineage-15.1.xml
+
+      - name: 5. 加入国行 on7ltechn 设备树
+        working-directory: /mnt/build
+        run: |
+          python3 - <<'PY'
+          import io
+          p = '.repo/local_manifests/roomservice.xml'
+          xml = io.open(p, encoding='utf-8').read()
+          entry = ('  <project path="device/samsung/on7ltechn" '
+                   'name="Galaxy-MSM8916/android_device_samsung_on7ltechn" '
+                   'groups="device" remote="Galaxy-MSM8916" '
+                   'revision="lineage-15.1" />\n')
+          if 'device/samsung/on7ltechn' not in xml:
+              xml = xml.replace('</manifest>', entry + '</manifest>')
+              io.open(p, 'w', encoding='utf-8').write(xml)
+          print(io.open(p, encoding='utf-8').read()[-400:])
+          PY
+
+      - name: 6. repo sync
+        working-directory: /mnt/build
+        run: |
+          repo sync -c -j4 --force-sync --no-clone-bundle --no-tags
+          df -h /mnt
+
+      - name: 7. 编译
+        working-directory: /mnt/build
+        env:
+          JAVA_HOME: /usr/lib/jvm/java-8-openjdk-amd64
+          JACK_SERVER_VM_ARGUMENTS: "-Dfile.encoding=UTF-8 -XX:+TieredCompilation -Xmx4g"
+          ANDROID_JACK_VM_ARGS: "-Dfile.encoding=UTF-8 -XX:+TieredCompilation -Xmx4g"
+          LC_ALL: C
+          USE_CCACHE: "0"
+        run: |
+          source build/envsetup.sh
+          # 该设备树的 AndroidProducts.mk 里产品名是 omni_on7ltechn（源自 Omni/TWRP 树），
+          # lunch 目标即 omni_on7ltechn-userdebug；breakfast 能自动匹配，失败则退回显式 lunch。
+          breakfast ${{ inputs.device }} || lunch omni_${{ inputs.device }}-userdebug
+          mka bacon -j${{ inputs.jobs }} 2>&1 | tee /mnt/build/build.log
+          echo "---- build exit: $? ----"
+
+      - name: 8. 查看产物
+        if: always()
+        working-directory: /mnt/build
+        run: |
+          df -h /mnt
+          ls -lh out/target/product/${{ inputs.device }}/*.zip || true
+          tail -n 80 build.log || true
+
+      - name: 9. 上传 ROM zip
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lineage-15.1-on7ltechn
+          path: /mnt/build/out/target/product/on7ltechn/*.zip
+          if-no-files-found: error
+
+      - name: 10. 失败时上传日志
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: |
+            /mnt/build/build.log
+            /mnt/build/out/verbose.log.gz
+          if-no-files-found: warn
