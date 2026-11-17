@@ -31,13 +31,15 @@ jobs:
     timeout-minutes: 350
 
     steps:
-      - name: 1. 清理磁盘并扩容到约 70GB
+      - name: 1. 清理磁盘并扩容
         uses: easimon/maximize-build-space@master
         with:
-          # 把工作目录放到扩容后的 /mnt 分区
+          # 把工作目录放到扩容后的分区
           build-root-directory: /mnt/build
-          root-reserve-mb: 4096
-          swap-size-mb: 8192
+          # 根分区保留 16GB（上次 4GB 连 apt 索引都放不下）
+          root-reserve-mb: 16384
+          # 16GB 内存足够，不开 swap，省空间
+          swap-size-mb: 0
           remove-dotnet: 'true'
           remove-android: 'true'
           remove-haskell: 'true'
@@ -46,24 +48,25 @@ jobs:
 
       - name: 2. 安装编译依赖
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            bc bison build-essential ccache curl flex g++-multilib gcc-multilib \
+          sudo apt-get clean
+          sudo apt-get update -o Acquire::Retries=5 || sudo apt-get update -o Acquire::Retries=5
+          # 逐个安装，缺哪个包就跳过，不让单个包拖垮整个步骤
+          PKGS="bc bison build-essential ccache curl flex g++-multilib gcc-multilib \
             git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev \
             lib32z1-dev libelf-dev liblz4-tool libncurses5 libncurses5-dev \
             libsdl1.2-dev libssl-dev libstdc++6 libxml2 libxml2-utils lzop \
             pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev \
-            openjdk-8-jdk python3 unzip
-          # 旧二进制需要的兼容库，装不上也不影响（jammy 已移除部分包）
-          sudo apt-get install -y libtinfo5 libncurses5 || true
+            openjdk-8-jdk python3 unzip libtinfo5"
+          for p in $PKGS; do
+            sudo apt-get install -y "$p" >/dev/null 2>&1 || echo "skip: $p"
+          done
           # Android 8.1 的脚本仍在调用 python（python2）
           if ! command -v python >/dev/null 2>&1; then
-            sudo apt-get install -y python2 || true
-            if command -v python2 >/dev/null 2>&1; then
-              sudo ln -sf /usr/bin/python2 /usr/bin/python
-            fi
+            sudo apt-get install -y python2 >/dev/null 2>&1 || true
+            command -v python2 >/dev/null 2>&1 && sudo ln -sf /usr/bin/python2 /usr/bin/python
           fi
-          java -version
+          java -version || echo "NO JDK8"
+          df -h / /mnt
 
       - name: 3. 配置 git 和 repo
         run: |
@@ -119,6 +122,10 @@ jobs:
           # 该设备树的 AndroidProducts.mk 里产品名是 omni_on7ltechn（源自 Omni/TWRP 树），
           # lunch 目标即 omni_on7ltechn-userdebug；breakfast 能自动匹配，失败则退回显式 lunch。
           breakfast ${{ inputs.device }} || lunch omni_${{ inputs.device }}-userdebug
+          # 同步出的 .repo 目录（含全部 git 元数据）编译时不再需要，删掉可省十几 GB
+          du -sh .repo 2>/dev/null || true
+          rm -rf .repo
+          df -h /mnt
           mka bacon -j${{ inputs.jobs }} 2>&1 | tee /mnt/build/build.log
           echo "---- build exit: $? ----"
 
