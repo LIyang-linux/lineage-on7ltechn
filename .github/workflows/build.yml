@@ -34,12 +34,13 @@ jobs:
       - name: 1. 清理磁盘并扩容
         uses: easimon/maximize-build-space@master
         with:
-          # 把工作目录放到扩容后的分区
-          build-root-directory: /mnt/build
-          # 根分区保留 16GB（上次 4GB 连 apt 索引都放不下）
-          root-reserve-mb: 16384
-          # 16GB 内存足够，不开 swap，省空间
-          swap-size-mb: 0
+          # 合法的输入名是 build-mount-path（不是 build-root-directory）
+          build-mount-path: /mnt/build
+          build-mount-path-ownership: runner:runner
+          # 根分区保留 10GB：够 apt 索引和基础工具
+          root-reserve-mb: 10240
+          temp-reserve-mb: 4096
+          swap-size-mb: 4096
           remove-dotnet: 'true'
           remove-android: 'true'
           remove-haskell: 'true'
@@ -66,7 +67,7 @@ jobs:
             command -v python2 >/dev/null 2>&1 && sudo ln -sf /usr/bin/python2 /usr/bin/python
           fi
           java -version || echo "NO JDK8"
-          df -h / /mnt
+          df -h / /mnt/build
 
       - name: 3. 配置 git 和 repo
         run: |
