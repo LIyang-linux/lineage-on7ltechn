@@ -61,11 +61,16 @@ jobs:
           for p in $PKGS; do
             sudo apt-get install -y "$p" >/dev/null 2>&1 || echo "skip: $p"
           done
-          # Android 8.1 的脚本仍在调用 python（python2）
-          if ! command -v python >/dev/null 2>&1; then
-            sudo apt-get install -y python2 >/dev/null 2>&1 || true
-            command -v python2 >/dev/null 2>&1 && sudo ln -sf /usr/bin/python2 /usr/bin/python
-          fi
+          # Android 8.1 的构建脚本是 Python 2 语法，必须让 `python` 指向 python2
+          for p in python2 python2.7 python2-minimal; do
+            sudo apt-get install -y "$p" >/dev/null 2>&1 && break
+          done
+          PY2="$(command -v python2.7 || command -v python2 || true)"
+          if [ -z "$PY2" ]; then echo "FATAL: python2 not available"; exit 1; fi
+          # /usr/local/bin 在 PATH 中优先于 /usr/bin，覆盖掉指向 python3 的那个 python
+          sudo mkdir -p /usr/local/bin
+          sudo ln -sf "$PY2" /usr/local/bin/python
+          echo "python -> $(readlink -f /usr/local/bin/python)"; python --version
           java -version || echo "NO JDK8"
           df -h / /mnt/build
 
@@ -124,6 +129,7 @@ jobs:
           LC_ALL: C
           USE_CCACHE: "0"
         run: |
+          set -o pipefail
           source build/envsetup.sh
           # 该设备树的 AndroidProducts.mk 里产品名是 omni_on7ltechn（源自 Omni/TWRP 树），
           # lunch 目标即 omni_on7ltechn-userdebug；breakfast 能自动匹配，失败则退回显式 lunch。
@@ -133,7 +139,6 @@ jobs:
           rm -rf .repo
           df -h /mnt
           mka bacon -j${{ inputs.jobs }} 2>&1 | tee /mnt/build/build.log
-          echo "---- build exit: $? ----"
 
       - name: 8. 查看产物
         if: always()
