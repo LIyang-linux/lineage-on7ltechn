@@ -87,21 +87,26 @@ jobs:
           curl -sL -o .repo/local_manifests/roomservice.xml \
             https://raw.githubusercontent.com/Galaxy-MSM8916/local_manifests/master/lineage-15.1.xml
 
-      - name: 5. 加入国行 on7ltechn 设备树
+      - name: 5. 修正 manifest（去掉失效的 vendor/gapps，补国行 on7ltechn）
         working-directory: /mnt/build
         run: |
           python3 - <<'PY'
           import io
           p = '.repo/local_manifests/roomservice.xml'
-          xml = io.open(p, encoding='utf-8').read()
+          # 1) 去掉指向 MindTheGapps/vendor_gapps 的失效项目（master 分支已不存在）
+          lines = [l for l in io.open(p, encoding='utf-8').read().splitlines(True)
+                   if 'MindTheGapps' not in l and 'path="vendor/gapps"' not in l]
+          xml = ''.join(lines)
+          # 2) 加入国行 on7ltechn 设备树
           entry = ('  <project path="device/samsung/on7ltechn" '
                    'name="Galaxy-MSM8916/android_device_samsung_on7ltechn" '
                    'groups="device" remote="Galaxy-MSM8916" '
                    'revision="lineage-15.1" />\n')
           if 'device/samsung/on7ltechn' not in xml:
               xml = xml.replace('</manifest>', entry + '</manifest>')
-              io.open(p, 'w', encoding='utf-8').write(xml)
-          print(io.open(p, encoding='utf-8').read()[-400:])
+          io.open(p, 'w', encoding='utf-8').write(xml)
+          print('--- manifest tail ---')
+          print(''.join(xml.splitlines(True)[-6:]))
           PY
 
       - name: 6. repo sync
