@@ -123,11 +123,14 @@ jobs:
               https://raw.githubusercontent.com/Galaxy-MSM8916/android_kernel_samsung_msm8916/lineage-17.1/arch/arm/configs/msm8916_sec_o7lte_chnopen_defconfig
           fi
           grep -n "MACH_O7_CHN_OPEN\|SEC_O7_PROJECT" "$DST"
-          # cm-14.1 没有 TARGET_KERNEL_VARIANT_CONFIG 机制，只认 TARGET_KERNEL_CONFIG
+          # 这个文件只有 114 行，是 variant 片段，不能当主 defconfig 用
+          # （直接当主 defconfig 会报 "You must specify VARIANT_DEFCONFIG !"）。
+          # 主 defconfig 由 msm8916-common 的 board/kernel.mk 指定为 msm8916_sec_defconfig，
+          # chnopen 通过 VARIANT_DEFCONFIG 合并；vendor/cm/build/tasks/kernel.mk 支持这个机制
           B=device/samsung/on7ltechn/BoardConfig.mk
-          sed -i 's|^TARGET_KERNEL_VARIANT_CONFIG.*|# TARGET_KERNEL_VARIANT_CONFIG 仅 15.1+ 支持，14.1 用 TARGET_KERNEL_CONFIG|' "$B"
-          if ! grep -q '^TARGET_KERNEL_CONFIG' "$B"; then
-            echo 'TARGET_KERNEL_CONFIG := msm8916_sec_o7lte_chnopen_defconfig' >> "$B"
+          sed -i '/^TARGET_KERNEL_CONFIG.*o7lte_chnopen_defconfig/d' "$B"
+          if ! grep -q '^TARGET_KERNEL_VARIANT_CONFIG' "$B"; then
+            echo 'TARGET_KERNEL_VARIANT_CONFIG := msm8916_sec_o7lte_chnopen_defconfig' >> "$B"
           fi
           grep -n "TARGET_KERNEL" "$B"
 
