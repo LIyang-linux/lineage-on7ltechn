@@ -204,11 +204,8 @@ jobs:
           # 资源生成之前开跑，报 file not found: .../cyanogenmod/platform/Manifest.java
           A=vendor/cmsdk/Android.mk
           if ! grep -q "platform.internal_intermediates/classes-full-debug.jar" "$A"; then
-            cat >> "$A" <<'MK'
-
-# 补上 internal 模块对 cmsdk 资源生成步骤的依赖（上游 cm-14.1 漏写）
-$(call intermediates-dir-for,JAVA_LIBRARIES,org.cyanogenmod.platform.internal,,COMMON)/classes-full-debug.jar: $(call intermediates-dir-for,APPS,org.cyanogenmod.platform-res,,COMMON)/src/R.stamp
-MK
+            printf '\n# 补上 internal 模块对 cmsdk 资源生成步骤的依赖（上游 cm-14.1 漏写）\n%s\n' \
+              '$(call intermediates-dir-for,JAVA_LIBRARIES,org.cyanogenmod.platform.internal,,COMMON)/classes-full-debug.jar: $(call intermediates-dir-for,APPS,org.cyanogenmod.platform-res,,COMMON)/src/R.stamp' >> "$A"
           fi
           tail -n 3 "$A"
 
