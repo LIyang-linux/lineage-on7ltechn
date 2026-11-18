@@ -166,6 +166,16 @@ jobs:
           fi
           grep -n '^HOSTCFLAGS' "$K"
 
+      - name: 6.8 关闭 Jack（4.11 在新 JDK8 上 SSL 握手失败）
+        working-directory: /mnt/build
+        run: |
+          set -e
+          B=device/samsung/on7ltechn/BoardConfig.mk
+          if ! grep -q 'ANDROID_COMPILE_WITH_JACK' "$B"; then
+            echo 'ANDROID_COMPILE_WITH_JACK := false' >> "$B"
+          fi
+          tail -n 3 "$B"
+
       - name: 7. 编译
         working-directory: /mnt/build
         env:
