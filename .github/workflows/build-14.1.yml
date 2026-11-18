@@ -209,6 +209,23 @@ jobs:
           fi
           tail -n 3 "$A"
 
+      - name: 6.7 补 MAX_SOCKET_NAME_LENGTH（三星自带的 ril.h 比 AOSP 老）
+        working-directory: /mnt/build
+        run: |
+          set -e
+          # hardware/samsung/ril/libril/ril.cpp 用的是本仓库自带的
+          # ril/include/telephony/ril.h，它比 AOSP 7.1 的版本旧，
+          # 缺 MAX_SOCKET_NAME_LENGTH（AOSP 里定义在 include/telephony/ril.h:84）
+          python3 -c "
+          import io
+          p = 'hardware/samsung/ril/libril/ril.cpp'
+          s = io.open(p).read()
+          if 'define MAX_SOCKET_NAME_LENGTH' not in s:
+              s = s.replace('#include <telephony/ril.h>', '#include <telephony/ril.h>\n\n#ifndef MAX_SOCKET_NAME_LENGTH\n#define MAX_SOCKET_NAME_LENGTH 6\n#endif', 1)
+              io.open(p, 'w').write(s)
+          print('MAX_SOCKET_NAME_LENGTH hits:', s.count('MAX_SOCKET_NAME_LENGTH'))
+          "
+
       - name: 7. 编译
         working-directory: /mnt/build
         run: |
