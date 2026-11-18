@@ -141,6 +141,19 @@ jobs:
           PY
           grep -n "policyMix = inputDesc->mPolicyMix.promote" hardware/qcom/audio-caf/msm8916/policy_hal/AudioPolicyManager.cpp
 
+      - name: 6.6 补国行内核 variant defconfig（15.1 分支遗漏）
+        working-directory: /mnt/build
+        run: |
+          set -e
+          DST=kernel/samsung/msm8916/arch/arm/configs/msm8916_sec_o7lte_chnopen_defconfig
+          if [ ! -f "$DST" ]; then
+            # 15.1 内核分支只有 swaopen，chnopen 只在 17.1 分支；
+            # 但 15.1 的 arch/arm/mach-msm/Kconfig 已定义 MACH_O7_CHN_OPEN，可直接复用该配置
+            curl -fsSL -o "$DST" \
+              https://raw.githubusercontent.com/Galaxy-MSM8916/android_kernel_samsung_msm8916/lineage-17.1/arch/arm/configs/msm8916_sec_o7lte_chnopen_defconfig
+          fi
+          grep -n "MACH_O7_CHN_OPEN" "$DST"
+
       - name: 7. 编译
         working-directory: /mnt/build
         env:
