@@ -209,22 +209,27 @@ jobs:
           fi
           tail -n 3 "$A"
 
-      - name: 6.7 补 MAX_SOCKET_NAME_LENGTH（三星自带的 ril.h 比 AOSP 老）
+      - name: 6.7 补 MAX_SOCKET_NAME_LENGTH（各仓库自带的 ril.h 都比 AOSP 老）
         working-directory: /mnt/build
         run: |
           set -e
-          # hardware/samsung/ril/libril/ril.cpp 用的是本仓库自带的
-          # ril/include/telephony/ril.h，它比 AOSP 7.1 的版本旧，
-          # 缺 MAX_SOCKET_NAME_LENGTH（AOSP 里定义在 include/telephony/ril.h:84）
-          python3 -c "
-          import io
-          p = 'hardware/samsung/ril/libril/ril.cpp'
-          s = io.open(p).read()
-          if 'define MAX_SOCKET_NAME_LENGTH' not in s:
-              s = s.replace('#include <telephony/ril.h>', '#include <telephony/ril.h>\n\n#ifndef MAX_SOCKET_NAME_LENGTH\n#define MAX_SOCKET_NAME_LENGTH 6\n#endif', 1)
-              io.open(p, 'w').write(s)
-          print('MAX_SOCKET_NAME_LENGTH hits:', s.count('MAX_SOCKET_NAME_LENGTH'))
-          "
+          # AOSP 7.1 在 hardware/ril/include/telephony/ril.h:84 定义了
+          # MAX_SOCKET_NAME_LENGTH，但三星和 CAF 的 fork 各自带了一份旧头文件，
+          # 路径优先级更高，把 AOSP 那份盖掉了：
+          #   hardware/samsung/ril/include/telephony/ril.h
+          #   hardware/ril-caf/include/telephony/ril.h
+          # 干脆把所有 ril.h 都扫一遍，缺就补上（值 6 与 AOSP 一致，重复定义无害）
+          n=0
+          while IFS= read -r H; do
+            if grep -q "define MAX_SOCKET_NAME_LENGTH" "$H"; then
+              echo "ok      $H"
+            else
+              printf '\n#ifndef MAX_SOCKET_NAME_LENGTH\n#define MAX_SOCKET_NAME_LENGTH 6\n#endif\n' >> "$H"
+              echo "patched $H"
+              n=$((n+1))
+            fi
+          done < <(grep -rl "MAX_SOCKET_NAME_LENGTH" --include="ril.h" hardware device vendor 2>/dev/null)
+          echo "patched headers: $n"
 
       - name: 6.8 修复 webview 预编译包的 LFS 指针
         working-directory: /mnt/build
