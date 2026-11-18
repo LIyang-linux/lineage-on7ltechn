@@ -154,6 +154,18 @@ jobs:
           fi
           grep -n "MACH_O7_CHN_OPEN" "$DST"
 
+      - name: 6.7 修宿主 GCC 的 -fno-common（3.10 内核 dtc 链接失败）
+        working-directory: /mnt/build
+        run: |
+          set -e
+          K=kernel/samsung/msm8916/Makefile
+          # GCC>=10 默认 -fno-common，而 3.10 的 dtc 依赖同名全局变量合并（yylloc），
+          # 给宿主工具链统一加 -fcommon 即可
+          if ! grep -q '^HOSTCFLAGS.*-fcommon' "$K"; then
+            sed -i 's/^HOSTCFLAGS *=/HOSTCFLAGS = -fcommon/' "$K"
+          fi
+          grep -n '^HOSTCFLAGS' "$K"
+
       - name: 7. 编译
         working-directory: /mnt/build
         env:
