@@ -272,6 +272,22 @@ jobs:
           print("fixed:", p, os.path.getsize(p))
           PY
 
+      - name: 6.9 修正 system 分区大小与 OTA 断言（国行实测 1744MB）
+        working-directory: /mnt/build
+        run: |
+          set -e
+          # 实测 blockdev --getsize64 /dev/block/bootdevice/by-name/system = 1828716544
+          # 设备树按国际版 2.03GB 生成镜像，国行写不进去（15.1 就是这样报 E1001 的）
+          for f in $(grep -rl "^BOARD_SYSTEMIMAGE_PARTITION_SIZE" device/samsung 2>/dev/null); do
+            sed -i 's|^BOARD_SYSTEMIMAGE_PARTITION_SIZE.*|BOARD_SYSTEMIMAGE_PARTITION_SIZE := 1828716544|' "$f"
+            echo "patched $f"; grep -n "BOARD_SYSTEMIMAGE_PARTITION_SIZE" "$f"
+          done
+          # PBRP 自报 ro.product.device=o7prolte，断言不放行就 E3004
+          B=device/samsung/on7ltechn/BoardConfig.mk
+          sed -i '/^TARGET_OTA_ASSERT_DEVICE/d' "$B"
+          echo 'TARGET_OTA_ASSERT_DEVICE := on7ltechn,o7prolte,o7lte,on7lte' >> "$B"
+          grep -n "TARGET_OTA_ASSERT_DEVICE" "$B"
+
       - name: 7. 编译
         working-directory: /mnt/build
         run: |
