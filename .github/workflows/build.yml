@@ -102,10 +102,6 @@ jobs:
           lines = [l for l in io.open(p, encoding='utf-8').read().splitlines(True)
                    if 'MindTheGapps' not in l and 'path="vendor/gapps"' not in l]
           xml = ''.join(lines)
-          # 2) 修正 audio HAL：Galaxy-MSM8916 那个 fork 的 15.1 分支混入了 Android 9 的
-          #    AudioPolicyMix 写法（对 wp<> 用 ->），改回 LineageOS 官方同名分支
-          xml = xml.replace('name="Galaxy-MSM8916/android_hardware_qcom_audio"',
-                            'name="LineageOS/android_hardware_qcom_audio"')
           # 2) 加入国行 on7ltechn 设备树
           entry = ('  <project path="device/samsung/on7ltechn" '
                    'name="Galaxy-MSM8916/android_device_samsung_on7ltechn" '
@@ -123,6 +119,27 @@ jobs:
         run: |
           repo sync -c -j4 --force-sync --no-clone-bundle --no-tags
           df -h /mnt
+
+      - name: 6.5 修补 audio HAL（fork 混入了 Android 9 写法）
+        working-directory: /mnt/build
+        run: |
+          python3 - <<'PY'
+          import io
+          p = 'hardware/qcom/audio-caf/msm8916/policy_hal/AudioPolicyManager.cpp'
+          s = io.open(p, encoding='utf-8').read()
+          if 'sp<AudioPolicyMix> policyMix = inputDesc->mPolicyMix.promote();' not in s:
+              # mPolicyMix 在 8.1 是 wp<>，不能直接 ->；先 promote 成 sp<>
+              s = s.replace(
+                  'if (!inputDesc->isActive() || mInputRoutes.hasRouteChanged(session)) {',
+                  'if (!inputDesc->isActive() || mInputRoutes.hasRouteChanged(session)) {\n'
+                  '        sp<AudioPolicyMix> policyMix = inputDesc->mPolicyMix.promote();', 1)
+              s = s.replace('inputDesc->mPolicyMix == NULL', 'policyMix == NULL')
+              s = s.replace('inputDesc->mPolicyMix != NULL', 'policyMix != NULL')
+              s = s.replace('inputDesc->mPolicyMix->', 'policyMix->')
+              io.open(p, 'w', encoding='utf-8').write(s)
+          print('patched:', s.count('policyMix->'), 'uses')
+          PY
+          grep -n "policyMix = inputDesc->mPolicyMix.promote" hardware/qcom/audio-caf/msm8916/policy_hal/AudioPolicyManager.cpp
 
       - name: 7. 编译
         working-directory: /mnt/build
