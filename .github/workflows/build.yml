@@ -176,6 +176,48 @@ jobs:
           fi
           tail -n 3 "$B"
 
+      - name: 6.9 修复 webview 预编译包的 LFS 指针
+        working-directory: /mnt/build
+        run: |
+          set -e
+          python3 - <<'PY'
+          import json, os, re, urllib.request
+
+          def post(url, payload):
+              req = urllib.request.Request(url, data=json.dumps(payload).encode(), method="POST")
+              req.add_header("Accept", "application/vnd.git-lfs+json")
+              req.add_header("Content-Type", "application/vnd.git-lfs+json")
+              return json.load(urllib.request.urlopen(req))
+
+          # 设备只有 32 位，只需要 arm 这一份
+          arch = "arm"
+          d = f"external/chromium-webview/prebuilt/{arch}"
+          p = os.path.join(d, "webview.apk")
+          head = open(p, "rb").read(200) if os.path.exists(p) else b""
+          if b"git-lfs.github.com/spec" not in head:
+              print("not a lfs pointer, size=", os.path.getsize(p))
+              raise SystemExit(0)
+          txt = open(p, encoding="utf-8").read()
+          oid = re.search(r"oid sha256:([0-9a-f]{64})", txt).group(1)
+          size = int(re.search(r"size (\d+)", txt).group(1))
+          # .lfsconfig 指向 LineageOS gerrit 的 LFS 服务
+          url = ""
+          cfg = os.path.join(d, ".lfsconfig")
+          if os.path.exists(cfg):
+              m = re.search(r'url\s*=\s*"?([^"\n]+)"?', open(cfg).read())
+              if m:
+                  url = m.group(1).strip()
+          if not url:
+              url = (f"https://review.lineageos.org/LineageOS/"
+                     f"android_external_chromium-webview_prebuilt_{arch}.git/info/lfs")
+          res = post(url.rstrip("/") + "/objects/batch",
+                     {"operation": "download", "transfers": ["basic"],
+                      "objects": [{"oid": oid, "size": size}]})
+          href = res["objects"][0]["actions"]["download"]["href"]
+          urllib.request.urlretrieve(href, p)
+          print("fixed:", p, os.path.getsize(p))
+          PY
+
       - name: 7. 编译
         working-directory: /mnt/build
         env:
@@ -201,7 +243,8 @@ jobs:
           du -sh .repo 2>/dev/null || true
           rm -rf .repo
           df -h /mnt
-          mka bacon -j${{ inputs.jobs }} 2>&1 | tee /mnt/build/build.log
+          mka bacon -j${{ inputs.jobs }} 2>&1 | tee /mnt/build/build.log \
+            | stdbuf -oL grep --line-buffered -E '^\[ *[0-9]+%|^FAILED|error:|ninja: build stopped'
 
       - name: 8. 查看产物
         if: always()
