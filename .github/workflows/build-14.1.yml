@@ -1,0 +1,187 @@
+# 在 GitHub Actions 上编译 LineageOS 14.1 (Android 7.1.2) for Samsung Galaxy On7 国行 (on7ltechn)
+#
+# 设备树来源：
+#   device/samsung/o7-common  ← 本仓库分支 cm-14.1-o7-common
+#   device/samsung/on7ltechn  ← 本仓库分支 cm-14.1-on7ltechn
+#   其余（common / vendor / kernel / audio）用 Galaxy-MSM8916 的 cm-14.1 分支
+
+name: Build LineageOS 14.1 (on7ltechn)
+
+on:
+  workflow_dispatch:
+    inputs:
+      jobs:
+        description: 'Parallel jobs (-jx)'
+        required: false
+        default: '4'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+
+    steps:
+      - name: 1. 清理磁盘并扩容
+        uses: easimon/maximize-build-space@master
+        with:
+          build-mount-path: /mnt/build
+          build-mount-path-ownership: runner:runner
+          root-reserve-mb: 10240
+          temp-reserve-mb: 4096
+          swap-size-mb: 4096
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+
+      - name: 2. 安装编译依赖
+        run: |
+          sudo apt-get clean
+          sudo apt-get update -o Acquire::Retries=5 || sudo apt-get update -o Acquire::Retries=5
+          PKGS="bc bison build-essential ccache curl flex g++-multilib gcc-multilib \
+            git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev \
+            lib32z1-dev libelf-dev liblz4-tool libncurses5 libncurses5-dev \
+            libsdl1.2-dev libssl-dev libstdc++6 libxml2 libxml2-utils lzop \
+            pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev \
+            openjdk-8-jdk python3 unzip libtinfo5"
+          for p in $PKGS; do
+            sudo apt-get install -y "$p" >/dev/null 2>&1 || echo "skip: $p"
+          done
+          for p in python2 python2.7 python2-minimal; do
+            sudo apt-get install -y "$p" >/dev/null 2>&1 && break
+          done
+          PY2="$(command -v python2.7 || command -v python2 || true)"
+          if [ -z "$PY2" ]; then echo "FATAL: python2 not available"; exit 1; fi
+          sudo mkdir -p /usr/local/bin
+          sudo ln -sf "$PY2" /usr/local/bin/python
+          echo "python -> $(readlink -f /usr/local/bin/python)"; python --version
+          java -version || echo "NO JDK8"
+          df -h / /mnt/build
+
+      - name: 3. 配置 git 和 repo
+        run: |
+          git config --global user.name  "GHA Builder"
+          git config --global user.email "builder@example.com"
+          git config --global color.ui false
+          mkdir -p ~/bin
+          curl -s https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+          echo "$HOME/bin" >> $GITHUB_PATH
+
+      - name: 4. repo init (LineageOS 14.1) + 写 manifest
+        working-directory: /mnt/build
+        run: |
+          repo init -u https://github.com/LineageOS/android.git -b cm-14.1 --depth=1 --no-clone-bundle
+          mkdir -p .repo/local_manifests
+          cat > .repo/local_manifests/o7.xml <<'XML'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <manifest>
+            <project path="device/samsung/msm8916-common" name="Galaxy-MSM8916/android_device_samsung_msm8916-common" revision="cm-14.1" groups="device" />
+            <project path="device/samsung/o7-common" name="LIyang-linux/lineage15-on7ltechn" revision="cm-14.1-o7-common" groups="device" />
+            <project path="device/samsung/on7ltechn" name="LIyang-linux/lineage15-on7ltechn" revision="cm-14.1-on7ltechn" groups="device" />
+            <project path="kernel/samsung/msm8916" name="Galaxy-MSM8916/android_kernel_samsung_msm8916" revision="cm-14.1" />
+            <!-- vendor 直接用 15.1 分支：里面就是 5.1.1 原厂 blob，14.1 通用 -->
+            <project path="vendor/samsung" name="Galaxy-MSM8916/proprietary_vendor_samsung" revision="lineage-15.1" />
+            <project path="hardware/samsung" name="LineageOS/android_hardware_samsung" revision="cm-14.1" />
+            <project path="hardware/qcom/audio-caf/msm8916" name="Galaxy-MSM8916/android_hardware_qcom_audio" revision="cm-14.1-caf-8916" />
+            <project path="device/qcom/common" name="LineageOS/android_device_qcom_common" revision="cm-14.1" />
+            <project path="packages/resources/devicesettings" name="LineageOS/android_packages_resources_devicesettings" revision="cm-14.1" />
+            <project path="external/sony/boringssl-compat" name="LineageOS/android_external_sony_boringssl-compat" revision="cm-14.1" />
+          </manifest>
+          XML
+          # 去掉 manifest 里的缩进，repo 对前导空格敏感度不高，但保险
+          sed -i 's/^ *//' .repo/local_manifests/o7.xml
+          cat .repo/local_manifests/o7.xml
+
+      - name: 5. repo sync
+        working-directory: /mnt/build
+        run: |
+          repo sync -c -j4 --force-sync --no-clone-bundle --no-tags
+          df -h /mnt
+
+      - name: 6.1 内核 -fcommon（GCC>=10 默认 -fno-common，3.10 的 dtc 会重复定义）
+        working-directory: /mnt/build
+        run: |
+          set -e
+          K=kernel/samsung/msm8916/Makefile
+          if ! grep -q '^HOSTCFLAGS.*-fcommon' "$K"; then
+            sed -i 's/^HOSTCFLAGS *=/HOSTCFLAGS = -fcommon/' "$K"
+          fi
+          grep -n '^HOSTCFLAGS' "$K"
+
+      - name: 6.2 补国行内核 defconfig（cm-14.1 分支没带）
+        working-directory: /mnt/build
+        run: |
+          set -e
+          DST=kernel/samsung/msm8916/arch/arm/configs/msm8916_sec_o7lte_chnopen_defconfig
+          if [ ! -f "$DST" ]; then
+            curl -fsSL -o "$DST" \
+              https://raw.githubusercontent.com/Galaxy-MSM8916/android_kernel_samsung_msm8916/lineage-17.1/arch/arm/configs/msm8916_sec_o7lte_chnopen_defconfig
+          fi
+          grep -n "MACH_O7_CHN_OPEN\|SEC_O7_PROJECT" "$DST"
+
+      - name: 6.3 把 8.1 vendor mk 的产物路径改回 system（14.1 没有 /vendor 分区）
+        working-directory: /mnt/build
+        run: |
+          set -e
+          python3 - <<'PY'
+          import io, os
+          files = ["vendor/samsung/o7-common/o7-common-vendor.mk",
+                   "vendor/samsung/on7ltechn/on7ltechn-vendor.mk"]
+          for f in files:
+              if not os.path.exists(f):
+                  print("missing", f); continue
+              out = []
+              for line in io.open(f, encoding="utf-8").read().splitlines():
+                  if ":" in line and "/proprietary/" in line:
+                      src, dst = line.rsplit(":", 1)
+                      d = dst.strip()
+                      if d.startswith("vendor/"):
+                          d = "system/" + d[len("vendor/"):]
+                      # 8.0 的 passthrough HAL 命名，7.1 不认识
+                      d = d.replace("camera.vendor.msm8916.so", "camera.msm8916.so")
+                      d = d.replace("sensors.vendor.msm8916.so", "sensors.msm8916.so")
+                      line = src + ":" + d
+                  out.append(line)
+              io.open(f, "w", encoding="utf-8").write("\n".join(out) + "\n")
+              print("patched", f)
+          PY
+          grep -c ":system/" vendor/samsung/o7-common/o7-common-vendor.mk
+          grep "sensors\|camera.msm8916" vendor/samsung/on7ltechn/on7ltechn-vendor.mk vendor/samsung/o7-common/o7-common-vendor.mk | head
+
+      - name: 7. 编译
+        working-directory: /mnt/build
+        run: |
+          set -o pipefail
+          export LC_ALL=C
+          source build/envsetup.sh
+          breakfast on7ltechn
+          echo "TARGET_PRODUCT=$TARGET_PRODUCT"
+          mka bacon -j4 2>&1 | tee build.log | grep -E '^\[ *[0-9]+%|^FAILED|error:|ninja: build stopped|^PLATFORM_VERSION'
+          exit ${PIPESTATUS[0]}
+
+      - name: 8. 列出产物
+        if: success()
+        working-directory: /mnt/build
+        run: |
+          ls -lh out/target/product/on7ltechn/*.zip
+          cat out/target/product/on7ltechn/system/build.prop | grep -E "ro.build.version|ro.product" | head
+
+      - name: 9. 上传 ROM
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lineage-14.1-on7ltechn
+          path: |
+            /mnt/build/out/target/product/on7ltechn/lineage-14.1-*.zip
+            /mnt/build/out/target/product/on7ltechn/recovery.img
+          if-no-files-found: warn
+
+      - name: 10. 失败时上传日志
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-14.1
+          path: /mnt/build/build.log
+          if-no-files-found: warn
