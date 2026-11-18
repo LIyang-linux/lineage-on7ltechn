@@ -219,6 +219,9 @@ jobs:
           #   hardware/samsung/ril/include/telephony/ril.h
           #   hardware/ril-caf/include/telephony/ril.h
           # 干脆把所有 ril.h 都扫一遍，缺就补上（值 6 与 AOSP 一致，重复定义无害）
+          # 注意：不能按"文件里有没有这个宏"来筛，旧头文件里根本没有该宏，
+          # 筛出来的是已经定义过的 AOSP 版本，等于什么都没改。
+          # 正确做法：把所有 telephony/ril.h 都补一遍
           n=0
           while IFS= read -r H; do
             if grep -q "define MAX_SOCKET_NAME_LENGTH" "$H"; then
@@ -228,7 +231,7 @@ jobs:
               echo "patched $H"
               n=$((n+1))
             fi
-          done < <(grep -rl "MAX_SOCKET_NAME_LENGTH" --include="ril.h" hardware device vendor 2>/dev/null)
+          done < <(find hardware device vendor -path "*/telephony/ril.h" 2>/dev/null)
           echo "patched headers: $n"
 
       - name: 6.8 修复 webview 预编译包的 LFS 指针
