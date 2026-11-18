@@ -102,6 +102,10 @@ jobs:
           lines = [l for l in io.open(p, encoding='utf-8').read().splitlines(True)
                    if 'MindTheGapps' not in l and 'path="vendor/gapps"' not in l]
           xml = ''.join(lines)
+          # 2) 修正 audio HAL：Galaxy-MSM8916 那个 fork 的 15.1 分支混入了 Android 9 的
+          #    AudioPolicyMix 写法（对 wp<> 用 ->），改回 LineageOS 官方同名分支
+          xml = xml.replace('name="Galaxy-MSM8916/android_hardware_qcom_audio"',
+                            'name="LineageOS/android_hardware_qcom_audio"')
           # 2) 加入国行 on7ltechn 设备树
           entry = ('  <project path="device/samsung/on7ltechn" '
                    'name="Galaxy-MSM8916/android_device_samsung_on7ltechn" '
@@ -130,6 +134,19 @@ jobs:
           USE_CCACHE: "0"
         run: |
           set -o pipefail
+          # Jack 走 PATH 里的 java 启动服务端，必须锁定 JDK 8，否则客户端/服务端 TLS 握手失败
+          export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+          export PATH="$JAVA_HOME/bin:$PATH"
+          which java && java -version
+          # 清掉可能由别的 JDK 生成的 jack 配置，避免 SSL 错误
+          rm -rf ~/.jack-server ~/.jack-settings
+          cat > ~/.jack-settings <<'EOF'
+          SERVER_PORT_SERVICE=8076
+          SERVER_PORT_ADMIN=8077
+          SERVER_NB_COMPILE=2
+          SERVER_NB_SERVICE=2
+          SERVER_TIMEOUT=180
+          EOF
           source build/envsetup.sh
           # 该设备树的 AndroidProducts.mk 里产品名是 omni_on7ltechn（源自 Omni/TWRP 树），
           # lunch 目标即 omni_on7ltechn-userdebug；breakfast 能自动匹配，失败则退回显式 lunch。
