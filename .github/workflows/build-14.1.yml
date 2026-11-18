@@ -119,6 +119,13 @@ jobs:
               https://raw.githubusercontent.com/Galaxy-MSM8916/android_kernel_samsung_msm8916/lineage-17.1/arch/arm/configs/msm8916_sec_o7lte_chnopen_defconfig
           fi
           grep -n "MACH_O7_CHN_OPEN\|SEC_O7_PROJECT" "$DST"
+          # cm-14.1 没有 TARGET_KERNEL_VARIANT_CONFIG 机制，只认 TARGET_KERNEL_CONFIG
+          B=device/samsung/on7ltechn/BoardConfig.mk
+          sed -i 's|^TARGET_KERNEL_VARIANT_CONFIG.*|# TARGET_KERNEL_VARIANT_CONFIG 仅 15.1+ 支持，14.1 用 TARGET_KERNEL_CONFIG|' "$B"
+          if ! grep -q '^TARGET_KERNEL_CONFIG' "$B"; then
+            echo 'TARGET_KERNEL_CONFIG := msm8916_sec_o7lte_chnopen_defconfig' >> "$B"
+          fi
+          grep -n "TARGET_KERNEL" "$B"
 
       - name: 6.3 把 8.1 vendor mk 的产物路径改回 system（14.1 没有 /vendor 分区）
         working-directory: /mnt/build
@@ -152,13 +159,24 @@ jobs:
       - name: 7. 编译
         working-directory: /mnt/build
         run: |
-          set -o pipefail
+          # 不用 set -e，每一步自己判错，保证日志一定落盘
+          set +e
           export LC_ALL=C
           source build/envsetup.sh
-          breakfast on7ltechn
-          echo "TARGET_PRODUCT=$TARGET_PRODUCT"
+          # 14.1 的 breakfast 会先跑 vendor/cm/tools/roomservice.py，失败时静默退出；
+          # 直接 lunch 到明确的产品名，绕开 roomservice
+          lunch lineage_on7ltechn-userdebug
+          lunch_rc=$?
+          echo "lunch rc=$lunch_rc TARGET_PRODUCT=${TARGET_PRODUCT:-none} TARGET_DEVICE=${TARGET_DEVICE:-none}"
+          if [ $lunch_rc -ne 0 ] || [ -z "${TARGET_PRODUCT:-}" ]; then
+            echo "=== LUNCH FAILED ==="; exit 1
+          fi
           mka bacon -j4 2>&1 | tee build.log | grep -E '^\[ *[0-9]+%|^FAILED|error:|ninja: build stopped|^PLATFORM_VERSION'
-          exit ${PIPESTATUS[0]}
+          rc=${PIPESTATUS[0]}
+          echo "=== mka rc=$rc ==="
+          echo "--- build.log 末尾 ---"
+          tail -n 60 build.log
+          exit $rc
 
       - name: 8. 列出产物
         if: success()
