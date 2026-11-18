@@ -84,7 +84,6 @@ jobs:
             <!-- vendor 直接用 15.1 分支：里面就是 5.1.1 原厂 blob，14.1 通用 -->
             <project path="vendor/samsung" name="Galaxy-MSM8916/proprietary_vendor_samsung" revision="lineage-15.1" />
             <project path="hardware/samsung" name="LineageOS/android_hardware_samsung" revision="cm-14.1" />
-            <project path="hardware/qcom/audio-caf/msm8916" name="Galaxy-MSM8916/android_hardware_qcom_audio" revision="cm-14.1-caf-8916" />
             <project path="device/qcom/common" name="LineageOS/android_device_qcom_common" revision="cm-14.1" />
             <project path="packages/resources/devicesettings" name="LineageOS/android_packages_resources_devicesettings" revision="cm-14.1" />
             <project path="external/sony/boringssl-compat" name="LineageOS/android_external_sony_boringssl-compat" revision="cm-14.1" />
