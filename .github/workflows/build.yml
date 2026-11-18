@@ -218,6 +218,23 @@ jobs:
           print("fixed:", p, os.path.getsize(p))
           PY
 
+      - name: 6.10 修正 system 分区大小（国行实测 1744MB）
+        working-directory: /mnt/build
+        run: |
+          set -e
+          # 实测：blockdev --getsize64 /dev/block/bootdevice/by-name/system = 1828716544
+          # 设备树默认按国际版 2181038080(2.03GB) 生成镜像，国行写不进去
+          for f in $(grep -rl "^BOARD_SYSTEMIMAGE_PARTITION_SIZE" device/samsung 2>/dev/null); do
+            sed -i 's|^BOARD_SYSTEMIMAGE_PARTITION_SIZE.*|BOARD_SYSTEMIMAGE_PARTITION_SIZE := 1828716544|' "$f"
+            echo "patched $f"; grep -n "BOARD_SYSTEMIMAGE_PARTITION_SIZE" "$f"
+          done
+          # 兼容不同 recovery 上报的设备名，避免 E3004
+          B=device/samsung/on7ltechn/BoardConfig.mk
+          if ! grep -q "^TARGET_OTA_ASSERT_DEVICE" "$B"; then
+            echo 'TARGET_OTA_ASSERT_DEVICE := on7ltechn,o7prolte,o7lte,on7lte' >> "$B"
+          fi
+          grep -n "TARGET_OTA_ASSERT_DEVICE" "$B" || true
+
       - name: 7. 编译
         working-directory: /mnt/build
         env:
