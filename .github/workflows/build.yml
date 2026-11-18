@@ -156,14 +156,8 @@ jobs:
           export PATH="$JAVA_HOME/bin:$PATH"
           which java && java -version
           # 清掉可能由别的 JDK 生成的 jack 配置，避免 SSL 错误
+          # 注意：不要让 jack-admin 读取自定义 settings（缺 SETTING_VERSION 会 unbound variable）
           rm -rf ~/.jack-server ~/.jack-settings
-          cat > ~/.jack-settings <<'EOF'
-          SERVER_PORT_SERVICE=8076
-          SERVER_PORT_ADMIN=8077
-          SERVER_NB_COMPILE=2
-          SERVER_NB_SERVICE=2
-          SERVER_TIMEOUT=180
-          EOF
           source build/envsetup.sh
           # 该设备树的 AndroidProducts.mk 里产品名是 omni_on7ltechn（源自 Omni/TWRP 树），
           # lunch 目标即 omni_on7ltechn-userdebug；breakfast 能自动匹配，失败则退回显式 lunch。
