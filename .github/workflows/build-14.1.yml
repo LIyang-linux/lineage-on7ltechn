@@ -194,6 +194,24 @@ jobs:
           done
           grep -rn "ANT_WIRELESS\|AntHal" device/samsung 2>/dev/null | head || true
 
+      - name: 6.6 修 cmsdk 资源依赖缺失（并行时 Manifest.java 还没生成）
+        working-directory: /mnt/build
+        run: |
+          set -e
+          # cm_platform_sdk 的 Android.mk 只给 org.cyanogenmod.platform 和
+          # org.cyanogenmod.platform.sdk 声明了 R.stamp 依赖，
+          # org.cyanogenmod.platform.internal 漏了。并行编译时 javac 抢在
+          # 资源生成之前开跑，报 file not found: .../cyanogenmod/platform/Manifest.java
+          A=vendor/cmsdk/Android.mk
+          if ! grep -q "platform.internal_intermediates/classes-full-debug.jar" "$A"; then
+            cat >> "$A" <<'MK'
+
+# 补上 internal 模块对 cmsdk 资源生成步骤的依赖（上游 cm-14.1 漏写）
+$(call intermediates-dir-for,JAVA_LIBRARIES,org.cyanogenmod.platform.internal,,COMMON)/classes-full-debug.jar: $(call intermediates-dir-for,APPS,org.cyanogenmod.platform-res,,COMMON)/src/R.stamp
+MK
+          fi
+          tail -n 3 "$A"
+
       - name: 7. 编译
         working-directory: /mnt/build
         run: |
@@ -215,6 +233,8 @@ jobs:
           if [ $lunch_rc -ne 0 ] || [ -z "${TARGET_PRODUCT:-}" ]; then
             echo "=== LUNCH FAILED ==="; exit 1
           fi
+          # 双保险：先把 cmsdk 资源模块单独编出来，避免并行竞态
+          m -j4 org.cyanogenmod.platform-res 2>&1 | tail -n 5
           mka bacon -j4 2>&1 | tee build.log | grep -E '^\[ *[0-9]+%|^FAILED|error:|ninja: build stopped|^PLATFORM_VERSION'
           rc=${PIPESTATUS[0]}
           echo "=== mka rc=$rc ==="
