@@ -162,6 +162,10 @@ jobs:
           # 不用 set -e，每一步自己判错，保证日志一定落盘
           set +e
           export LC_ALL=C
+          # runner 默认 JAVA_HOME 是 JDK 11，14.1 必须用 JDK 8（要有 lib/tools.jar）
+          export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+          export PATH=$JAVA_HOME/bin:$PATH
+          java -version
           source build/envsetup.sh
           # 14.1 的 breakfast 会先跑 vendor/cm/tools/roomservice.py，失败时静默退出；
           # 直接 lunch 到明确的产品名，绕开 roomservice
