@@ -9,5 +9,5 @@ PRODUCT_PACKAGES += \
 # 14.1 的 audio HAL 从 /system/etc 读 mixer_paths.xml 与 audio_effects.conf。
 # 原厂/8.1 把这两份放在 /vendor/etc，7.1 找不到就会静音。
 PRODUCT_COPY_FILES += \
-    $(LOCAL_PATH)/configs/audio/mixer_paths.xml:system/etc/mixer_paths.xml \
-    $(LOCAL_PATH)/configs/audio/audio_effects.conf:system/etc/audio_effects.conf
+    device/samsung/o7-common/configs/audio/mixer_paths.xml:system/etc/mixer_paths.xml \
+    device/samsung/o7-common/configs/audio/audio_effects.conf:system/etc/audio_effects.conf
