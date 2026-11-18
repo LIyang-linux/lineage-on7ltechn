@@ -156,13 +156,27 @@ jobs:
           grep -c ":system/" vendor/samsung/o7-common/o7-common-vendor.mk
           grep "sensors\|camera.msm8916" vendor/samsung/on7ltechn/on7ltechn-vendor.mk vendor/samsung/o7-common/o7-common-vendor.mk | head
 
-      - name: 6.4 去掉 ANT+ 栈（关 Jack 后 AntHalService 的 dex 规则缺失）
+      - name: 6.5 重新启用 Jack 并放行 JDK8 的旧 TLS
         working-directory: /mnt/build
         run: |
           set -e
-          # AntHalService 在 ANDROID_COMPILE_WITH_JACK=false 时不会生成
-          # with-local/classes.dex 规则，ninja 直接报 missing and no known rule。
-          # 本机没有 ANT 硬件，直接把它和开关一起移除。
+          # cm-14.1 的 build/core/java.mk 里根本没有 javac+dx 的 dex 规则，
+          # 只保留了 jack-java-to-dex。ANDROID_COMPILE_WITH_JACK=false 会让
+          # 每个 Java 模块都引用不存在的 with-local/classes.dex，所以必须开 Jack。
+          B=device/samsung/on7ltechn/BoardConfig.mk
+          sed -i 's|^ANDROID_COMPILE_WITH_JACK.*|ANDROID_COMPILE_WITH_JACK := true|' "$B"
+          grep -n "ANDROID_COMPILE_WITH_JACK" "$B"
+          # Jack 客户端与服务端之间走 JDK 自带 TLS；JDK 8u3xx 起默认禁用旧协议，
+          # 会报 "SSL error" 起不来，把禁用列表清空即可
+          JS=/usr/lib/jvm/java-8-openjdk-amd64/jre/lib/security/java.security
+          sudo sed -i 's|^jdk\.tls\.disabledAlgorithms=.*|jdk.tls.disabledAlgorithms=|' "$JS"
+          sudo sed -i 's|^jdk\.certpath\.disabledAlgorithms=.*|jdk.certpath.disabledAlgorithms=|' "$JS"
+          grep -n "^jdk\.tls\.disabledAlgorithms" "$JS"
+
+      - name: 6.4 去掉 ANT+ 栈（本机没有 ANT 硬件）
+        working-directory: /mnt/build
+        run: |
+          set -e
           grep -rln "BOARD_ANT_WIRELESS_DEVICE" device/samsung 2>/dev/null | while read f; do
             sed -i 's|^\(BOARD_ANT_WIRELESS_DEVICE.*\)$|# \1|' "$f"
             echo "disabled ant in $f"
@@ -182,6 +196,8 @@ jobs:
           # runner 默认 JAVA_HOME 是 JDK 11，14.1 必须用 JDK 8（要有 lib/tools.jar）
           export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
           export PATH=$JAVA_HOME/bin:$PATH
+          # Jack 服务端默认堆太小，16G 机器给到 6G
+          export JACK_SERVER_VM_ARGUMENTS="-Dfile.encoding=UTF-8 -XX:+TieredCompilation -Xmx6g"
           java -version
           source build/envsetup.sh
           # 14.1 的 breakfast 会先跑 vendor/cm/tools/roomservice.py，失败时静默退出；
