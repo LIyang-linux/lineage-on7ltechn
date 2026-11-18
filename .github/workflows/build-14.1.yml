@@ -156,6 +156,23 @@ jobs:
           grep -c ":system/" vendor/samsung/o7-common/o7-common-vendor.mk
           grep "sensors\|camera.msm8916" vendor/samsung/on7ltechn/on7ltechn-vendor.mk vendor/samsung/o7-common/o7-common-vendor.mk | head
 
+      - name: 6.4 去掉 ANT+ 栈（关 Jack 后 AntHalService 的 dex 规则缺失）
+        working-directory: /mnt/build
+        run: |
+          set -e
+          # AntHalService 在 ANDROID_COMPILE_WITH_JACK=false 时不会生成
+          # with-local/classes.dex 规则，ninja 直接报 missing and no known rule。
+          # 本机没有 ANT 硬件，直接把它和开关一起移除。
+          grep -rln "BOARD_ANT_WIRELESS_DEVICE" device/samsung 2>/dev/null | while read f; do
+            sed -i 's|^\(BOARD_ANT_WIRELESS_DEVICE.*\)$|# \1|' "$f"
+            echo "disabled ant in $f"
+          done
+          grep -rln "AntHalService" device/samsung 2>/dev/null | while read f; do
+            sed -i '/AntHalService/d' "$f"
+            echo "removed AntHalService from $f"
+          done
+          grep -rn "ANT_WIRELESS\|AntHal" device/samsung 2>/dev/null | head || true
+
       - name: 7. 编译
         working-directory: /mnt/build
         run: |
