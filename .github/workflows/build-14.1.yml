@@ -78,6 +78,10 @@ jobs:
           <?xml version="1.0" encoding="UTF-8"?>
           <manifest>
             <project path="device/samsung/msm8916-common" name="Galaxy-MSM8916/android_device_samsung_msm8916-common" revision="cm-14.1" groups="device" />
+            <!-- qcom-common 提供 BOARD_USES_QCOM_HARDWARE=true，缺了会导致
+                 qcom-audio 的 pathmap 指向不存在的目录，libaudiopolicymanager 没人生成 -->
+            <project path="device/samsung/qcom-common" name="LineageOS/android_device_samsung_qcom-common" revision="cm-14.1" groups="device" />
+            <project path="device/qcom/sepolicy" name="LineageOS/android_device_qcom_sepolicy" revision="cm-14.1" groups="device" />
             <project path="device/samsung/o7-common" name="LIyang-linux/lineage15-on7ltechn" revision="cm-14.1-o7-common" groups="device" />
             <project path="device/samsung/on7ltechn" name="LIyang-linux/lineage15-on7ltechn" revision="cm-14.1-on7ltechn" groups="device" />
             <project path="kernel/samsung/msm8916" name="Galaxy-MSM8916/android_kernel_samsung_msm8916" revision="cm-14.1" />
