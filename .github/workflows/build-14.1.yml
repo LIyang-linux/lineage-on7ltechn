@@ -292,6 +292,7 @@ jobs:
           grep -n "TARGET_OTA_ASSERT_DEVICE" "$B"
 
       - name: 7. 编译
+        timeout-minutes: 240
         working-directory: /mnt/build
         run: |
           # 不用 set -e，每一步自己判错，保证日志一定落盘
@@ -339,7 +340,7 @@ jobs:
           if-no-files-found: warn
 
       - name: 10. 失败时上传日志
-        if: failure()
+        if: always() && !cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: build-log-14.1
