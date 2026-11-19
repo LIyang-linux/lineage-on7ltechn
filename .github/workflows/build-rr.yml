@@ -97,6 +97,12 @@ jobs:
                  权限模型 backport 会引入 sendTextForSubscriberWithSelfPermissions 等新接口 -->
             <remove-project name="LineageOS/android_frameworks_opt_telephony" />
             <project path="frameworks/opt/telephony" name="LineageOS/android_frameworks_opt_telephony" revision="cc70a318df2d02190218923ce073b562fb773800" />
+            <!-- cm-14.1 的 ContactsProvider 在 2022-08-04 的 "enforce stricter
+                 CallLogProvider query" 里开始使用 android.database.sqlite.SQLiteTokenizer，
+                 那是 Android 9 才有的类，RR 的 frameworks/base（2018-01）里没有。
+                 钉到该提交之前的 2022-02-12，保持 7.1 的 API 面 -->
+            <remove-project name="LineageOS/android_packages_providers_ContactsProvider" />
+            <project path="packages/providers/ContactsProvider" name="LineageOS/android_packages_providers_ContactsProvider" revision="96b79350e05b46b9272151c2c3f79f77fe0e6903" />
             <!-- RR 清单把整个 chromium-webview 指到 cm-14.1，该分支已被 LineageOS 删除；
                  换成 LOS 14.1 的办法：只取 patches + prebuilt/arm 两个固定 commit -->
             <!-- cm-14.1-caf-8916 这个分支在 2019-08 混进了 8.0 的 AudioMix API
