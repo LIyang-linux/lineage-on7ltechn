@@ -28,7 +28,7 @@ jobs:
           build-mount-path-ownership: runner:runner
           root-reserve-mb: 10240
           temp-reserve-mb: 4096
-          swap-size-mb: 4096
+          swap-size-mb: 8192
           remove-dotnet: 'true'
           remove-android: 'true'
           remove-haskell: 'true'
@@ -57,6 +57,18 @@ jobs:
           sudo ln -sf "$PY2" /usr/local/bin/python
           echo "python -> $(readlink -f /usr/local/bin/python)"; python --version
           java -version || echo "NO JDK8"
+          # 兜底：确认 swap 真的生效，否则 7GB runner 跑到 dex2oat 必被 OOM 杀
+          if ! swapon --show | grep -q .; then
+            echo "!!! swap 未启用，手动创建 8G"
+            sudo fallocate -l 8G /swapfile2 || sudo dd if=/dev/zero of=/swapfile2 bs=1M count=8192
+            sudo chmod 600 /swapfile2
+            sudo mkswap /swapfile2
+            sudo swapon /swapfile2
+          fi
+          sudo sysctl -w vm.swappiness=60
+          echo "=== 内存与 swap 状态 ==="
+          free -h
+          swapon --show
           df -h / /mnt/build
 
       - name: 3. 配置 git 和 repo
@@ -350,7 +362,7 @@ jobs:
           export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
           export PATH=$JAVA_HOME/bin:$PATH
           # Jack 服务端默认堆太小，16G 机器给到 6G
-          export JACK_SERVER_VM_ARGUMENTS="-Dfile.encoding=UTF-8 -XX:+TieredCompilation -Xmx6g"
+          export JACK_SERVER_VM_ARGUMENTS="-Dfile.encoding=UTF-8 -XX:+TieredCompilation -Xmx4g"
           java -version
           source build/envsetup.sh
           # 14.1 的 breakfast 会先跑 vendor/cm/tools/roomservice.py，失败时静默退出；
@@ -362,8 +374,8 @@ jobs:
             echo "=== LUNCH FAILED ==="; exit 1
           fi
           # 双保险：先把 cmsdk 资源模块单独编出来，避免并行竞态
-          m -j4 org.cyanogenmod.platform-res 2>&1 | tail -n 5
-          mka bacon -j4 2>&1 | tee build.log | grep -E '^\[ *[0-9]+%|^FAILED|error:|ninja: build stopped|^PLATFORM_VERSION'
+          m -j2 org.cyanogenmod.platform-res 2>&1 | tail -n 5
+          mka bacon -j3 2>&1 | tee build.log | grep -E '^\[ *[0-9]+%|^FAILED|error:|ninja: build stopped|^PLATFORM_VERSION'
           rc=${PIPESTATUS[0]}
           echo "=== mka rc=$rc ==="
           echo "--- build.log 末尾 ---"
