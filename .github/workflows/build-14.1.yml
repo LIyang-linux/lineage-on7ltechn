@@ -313,6 +313,32 @@ jobs:
           grep -n "socket rild\|ril-daemon" "$F" | head -12
           ! grep -q "ril-daemon1" "$F"
 
+      - name: 6.11 单卡化：修 ril_class 与 multisim（14.1 上 sec-ril 对空卡槽只报 NOT_READY）
+        working-directory: /mnt/build
+        run: |
+          set -e
+          # 两个属性都是 8.1 时代的东西，直接搬到 7.1 会连锁失败：
+          # 1) ro.telephony.ril_class=SamsungQcomRIL
+          #    该类在 7.1 的 telephony 里不存在，PhoneFactory.instantiateCustomRIL()
+          #    反射失败后进入 while(true) sleep，initSubscriptionController 永不执行。
+          # 2) persist.radio.multisim.config=dsds
+          #    SubscriptionInfoUpdater.isAllIccIdQueryDone() 要求两个卡槽都有 ICCID，
+          #    而空卡槽 1 只上报 NOT_READY（不是 ABSENT），mIccId[1] 永远 null，
+          #    于是 siminfo 永远不写，设置里一直显示无 SIM。
+          #    实测切飞行模式重新读卡后订阅才出现 —— 证明链路本身通，只是卡在等待。
+          n=0
+          while IFS= read -r f; do
+            sed -i 's|ro\.telephony\.ril_class=SamsungQcomRIL|ro.telephony.ril_class=RIL|g' "$f"
+            sed -i 's|persist\.radio\.multisim\.config=dsds|persist.radio.multisim.config=none|g' "$f"
+            echo "== $f"
+            grep -nE "ro\.telephony\.ril_class|persist\.radio\.multisim\.config" "$f" || true
+            n=$((n+1))
+          done < <(grep -rlE "SamsungQcomRIL|persist\.radio\.multisim\.config=dsds" device vendor 2>/dev/null)
+          echo "patched files: $n"
+          if [ "$n" -eq 0 ]; then
+            echo "WARN: 没找到属性定义，检查 vendor/samsung/on7ltechn 的 product mk"
+          fi
+
       - name: 7. 编译
         timeout-minutes: 240
         working-directory: /mnt/build
