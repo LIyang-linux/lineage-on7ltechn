@@ -91,6 +91,15 @@ jobs:
             <project path="device/qcom/common" name="LineageOS/android_device_qcom_common" revision="cm-14.1" />
             <project path="packages/resources/devicesettings" name="LineageOS/android_packages_resources_devicesettings" revision="cm-14.1" />
             <project path="external/sony/boringssl-compat" name="LineageOS/android_external_sony_boringssl-compat" revision="cm-14.1" />
+            <!-- RR 清单把整个 chromium-webview 指到 cm-14.1，该分支已被 LineageOS 删除；
+                 换成 LOS 14.1 的办法：只取 patches + prebuilt/arm 两个固定 commit -->
+            <remove-project name="LineageOS/android_external_chromium-webview" />
+            <project path="external/chromium-webview/patches" name="LineageOS/android_external_chromium-webview_patches" revision="1c25993282a7d31bfac30d86c3e5f55df9dc0c06">
+              <linkfile src="Android.mk" dest="external/chromium-webview/Android.mk" />
+              <linkfile src="CleanSpec.mk" dest="external/chromium-webview/CleanSpec.mk" />
+              <linkfile src="README" dest="external/chromium-webview/README" />
+            </project>
+            <project path="external/chromium-webview/prebuilt/arm" name="LineageOS/android_external_chromium-webview_prebuilt_arm" revision="6d883cfe7f5f50470b29b21c26aa204205186a1a" />
           </manifest>
           XML
           # 去掉 manifest 里的缩进，repo 对前导空格敏感度不高，但保险
