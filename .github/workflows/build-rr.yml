@@ -91,6 +91,10 @@ jobs:
             <project path="device/qcom/common" name="LineageOS/android_device_qcom_common" revision="cm-14.1" />
             <project path="packages/resources/devicesettings" name="LineageOS/android_packages_resources_devicesettings" revision="cm-14.1" />
             <project path="external/sony/boringssl-compat" name="LineageOS/android_external_sony_boringssl-compat" revision="cm-14.1" />
+            <!-- RR 的 frameworks/base 是 2017 年的 IMms.aidl，而 LineageOS 后来改过
+                 telephony 的 sendMessage 签名，混用会编译失败，这里强制换回 RR 自己的 -->
+            <remove-project name="LineageOS/android_frameworks_opt_telephony" />
+            <project path="frameworks/opt/telephony" name="ResurrectionRemix/android_frameworks_opt_telephony" revision="nougat" />
             <!-- RR 清单把整个 chromium-webview 指到 cm-14.1，该分支已被 LineageOS 删除；
                  换成 LOS 14.1 的办法：只取 patches + prebuilt/arm 两个固定 commit -->
             <remove-project name="LineageOS/android_external_chromium-webview" />
