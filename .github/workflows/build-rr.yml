@@ -112,14 +112,6 @@ jobs:
           repo sync -c -j4 --force-sync --no-clone-bundle --no-tags
           df -h /mnt
 
-      - name: 5.5 把设备树对 vendor/cm 的继承改到 vendor/rr
-        working-directory: /mnt/build
-        run: |
-          set -e
-          for f in device/samsung/o7-common/lineage*.mk device/samsung/on7ltechn/*.mk device/samsung/msm8916-common/*.mk; do
-            [ -f "$f" ] && sed -i 's#vendor/cm#vendor/rr#g' "$f" || true
-          done
-          grep -rn "vendor/rr" device/samsung/o7-common device/samsung/on7ltechn | head -10
 
       - name: 6.1 内核 -fcommon（GCC>=10 默认 -fno-common，3.10 的 dtc 会重复定义）
         working-directory: /mnt/build
