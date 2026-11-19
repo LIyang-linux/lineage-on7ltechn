@@ -375,12 +375,28 @@ jobs:
           fi
           # 双保险：先把 cmsdk 资源模块单独编出来，避免并行竞态
           m -j2 org.cyanogenmod.platform-res 2>&1 | tail -n 5
-          mka bacon -j3 2>&1 | tee build.log | grep -E '^\[ *[0-9]+%|^FAILED|error:|ninja: build stopped|^PLATFORM_VERSION'
+          # 行缓冲 + 放宽过滤：把 Install/Package/dex2oat/Image 这些关键阶段打出来，
+          # 否则永远只看到最后一条 [89%] Strip 行，无法判断卡在哪
+          stdbuf -oL -eL mka bacon -j3 2>&1 | tee build.log | grep --line-buffered -E '^\[ *[0-9]+%|^FAILED|error:|ninja: build stopped|^PLATFORM_VERSION|^Install|^Package|dex2oat|system\.img|boot\.img'
           rc=${PIPESTATUS[0]}
           echo "=== mka rc=$rc ==="
-          echo "--- build.log 末尾 ---"
-          tail -n 60 build.log
+          echo "--- 未过滤的最后 30 行（真正卡住的位置） ---"
+          tail -n 30 build.log
+          echo "--- 现场快照 ---"
+          free -h || true
+          df -h / /mnt/build || true
+          (sudo dmesg | tail -25) 2>/dev/null || true
+          (ps -eo pcpu,pmem,comm --sort=-pcpu | head -12) 2>/dev/null || true
           exit $rc
+
+      - name: 7.5 上传构建日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-14.1
+          path: /mnt/build/build.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: 8. 列出产物
         if: success()
