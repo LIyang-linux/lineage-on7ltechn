@@ -91,10 +91,12 @@ jobs:
             <project path="device/qcom/common" name="LineageOS/android_device_qcom_common" revision="cm-14.1" />
             <project path="packages/resources/devicesettings" name="LineageOS/android_packages_resources_devicesettings" revision="cm-14.1" />
             <project path="external/sony/boringssl-compat" name="LineageOS/android_external_sony_boringssl-compat" revision="cm-14.1" />
-            <!-- RR 的 frameworks/base 是 2017 年的 IMms.aidl，而 LineageOS 后来改过
-                 telephony 的 sendMessage 签名，混用会编译失败，这里强制换回 RR 自己的 -->
-            <remove-project name="LineageOS/android_frameworks_opt_telephony" />
-            <project path="frameworks/opt/telephony" name="ResurrectionRemix/android_frameworks_opt_telephony" revision="nougat" />
+            <!-- RR 的分支已经漂移：base 停在 2018-01，telephony 却停在 2016-09，
+                 两者接口对不上。这里把 telephony 钉到 2018-01-02 的 LineageOS 提交，
+                 与 RR base 的时间线对齐；LineageOS 2019 年之后对 cm-14.1 的
+                 权限模型 backport 会引入 sendTextForSubscriberWithSelfPermissions 等新接口 -->
+            <remove-project name="LIyang-linux/dummy_nonexistent" />
+            <project path="frameworks/opt/telephony" name="LineageOS/android_frameworks_opt_telephony" revision="cc70a318df2d02190218923ce073b562fb773800" />
             <!-- RR 清单把整个 chromium-webview 指到 cm-14.1，该分支已被 LineageOS 删除；
                  换成 LOS 14.1 的办法：只取 patches + prebuilt/arm 两个固定 commit -->
             <remove-project name="LineageOS/android_external_chromium-webview" />
