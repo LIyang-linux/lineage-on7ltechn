@@ -4,7 +4,7 @@
 从源码全自动编译 **三星 Galaxy On7 国行 SM-G6000（`on7ltechn`）** 的多个第三方 ROM。
 
 - 设备：Samsung Galaxy On7 (CHN) SM-G6000
-- SoC：MSM8916（Cortex-A53 ×4 @1.2GHz），Adreno 306，1.5 GB RAM
+- SoC：MSM8916（Cortex-A53 ×4 @1.2GHz），Adreno 306，1.5 GB / 2.0GB RAM
 - 屏幕：720×1280，触摸控制器 ZT7548
 - 摄像头：后置 S5K3L2XX，前置 S5K5E3YX
 - Bootloader：G6000ZCS2BRI1
@@ -18,7 +18,7 @@
 | 目标版本 | workflow | 状态 |
 |---|---|---|
 | LineageOS 15.1 (Android 8.1) | `build.yml` | ✅ 可编译、可刷入、日常可用 |
-| LineageOS 14.1 (Android 7.1.2) | `build-14.1.yml` | 🚧 可点亮；暂无基带 |
+| LineageOS 14.1 (Android 7.1.2) | `build-14.1.yml` | ⍻ 可点亮；仅单卡 |
 | Resurrection Remix 5.8.5 (Android 7.1.2) | `build-rr.yml` | 🚧 首次构建进行中 |
 
 > 7.1.2 是 LineageOS 的版本起点（LineageOS 由 CM14.1 接续而来），更低版本只能找
