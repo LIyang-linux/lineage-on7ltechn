@@ -211,7 +211,8 @@ jobs:
           # org.cyanogenmod.platform.sdk 声明了 R.stamp 依赖，
           # org.cyanogenmod.platform.internal 漏了。并行编译时 javac 抢在
           # 资源生成之前开跑，报 file not found: .../cyanogenmod/platform/Manifest.java
-          A=vendor/rrsdk/Android.mk
+          A=vendor/cmsdk/Android.mk
+          [ -f "$A" ] || { echo "RR 7.1.2 不带 cmsdk，跳过"; exit 0; }
           if ! grep -q "platform.internal_intermediates/classes-full-debug.jar" "$A"; then
             printf '\n# 补上 internal 模块对 cmsdk 资源生成步骤的依赖（上游 cm-14.1 漏写）\n%s\n' \
               '$(call intermediates-dir-for,JAVA_LIBRARIES,org.cyanogenmod.platform.internal,,COMMON)/classes-full-debug.jar: $(call intermediates-dir-for,APPS,org.cyanogenmod.platform-res,,COMMON)/src/R.stamp' >> "$A"
