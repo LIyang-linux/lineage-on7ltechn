@@ -377,8 +377,16 @@ jobs:
           m -j2 org.cyanogenmod.platform-res 2>&1 | tail -n 5
           # 行缓冲 + 放宽过滤：把 Install/Package/dex2oat/Image 这些关键阶段打出来，
           # 否则永远只看到最后一条 [89%] Strip 行，无法判断卡在哪
-          stdbuf -oL -eL mka bacon -j3 2>&1 | tee build.log | grep --line-buffered -E '^\[ *[0-9]+%|^FAILED|error:|ninja: build stopped|^PLATFORM_VERSION|^Install|^Package|dex2oat|system\.img|boot\.img'
-          rc=${PIPESTATUS[0]}
+          # mka 是 shell 函数，不能被 stdbuf 包装（会 exit 127）。
+          # 用 script 分配 pty，既能强制行缓冲拿到完整日志，又保留 mka 的语义。
+          set -o pipefail
+          # script -c 会新起一个 sh，里面没有 mka 函数，必须重新 source + lunch
+          script -qfec "bash -c 'source build/envsetup.sh >/dev/null && lunch lineage_on7ltechn-userdebug >/dev/null && mka bacon -j3'" build.log &
+          SPID=$!
+          tail -n +1 -f build.log --pid=$SPID 2>/dev/null | grep --line-buffered -E '^\[ *[0-9]+%|^Install|^Package|^FAILED|error:|ninja: build stopped|^PLATFORM_VERSION|system\.img|boot\.img' &
+          GPID=$!
+          wait $SPID; rc=$?
+          sleep 2; kill $GPID 2>/dev/null || true
           echo "=== mka rc=$rc ==="
           echo "--- 未过滤的最后 30 行（真正卡住的位置） ---"
           tail -n 30 build.log
@@ -388,15 +396,6 @@ jobs:
           (sudo dmesg | tail -25) 2>/dev/null || true
           (ps -eo pcpu,pmem,comm --sort=-pcpu | head -12) 2>/dev/null || true
           exit $rc
-
-      - name: 7.5 上传构建日志
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log-14.1
-          path: /mnt/build/build.log
-          if-no-files-found: ignore
-          retention-days: 7
 
       - name: 8. 列出产物
         if: success()
