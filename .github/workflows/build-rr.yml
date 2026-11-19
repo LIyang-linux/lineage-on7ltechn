@@ -82,8 +82,8 @@ jobs:
                  qcom-audio 的 pathmap 指向不存在的目录，libaudiopolicymanager 没人生成 -->
             <project path="device/samsung/qcom-common" name="LineageOS/android_device_samsung_qcom-common" revision="cm-14.1" groups="device" />
             <!-- device/qcom/sepolicy 已在 LineageOS cm-14.1 默认清单里，重复添加会 duplicate path -->
-            <project path="device/samsung/o7-common" name="LIyang-linux/lineage15-on7ltechn" revision="cm-14.1-o7-common" groups="device" />
-            <project path="device/samsung/on7ltechn" name="LIyang-linux/lineage15-on7ltechn" revision="cm-14.1-on7ltechn" groups="device" />
+            <project path="device/samsung/o7-common" name="LIyang-linux/lineage-on7ltechn" revision="cm-14.1-o7-common" groups="device" />
+            <project path="device/samsung/on7ltechn" name="LIyang-linux/lineage-on7ltechn" revision="cm-14.1-on7ltechn" groups="device" />
             <project path="kernel/samsung/msm8916" name="Galaxy-MSM8916/android_kernel_samsung_msm8916" revision="cm-14.1" />
             <!-- vendor 直接用 15.1 分支：里面就是 5.1.1 原厂 blob，14.1 通用 -->
             <project path="vendor/samsung" name="Galaxy-MSM8916/proprietary_vendor_samsung" revision="lineage-15.1" />
