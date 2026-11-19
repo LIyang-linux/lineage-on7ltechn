@@ -99,6 +99,11 @@ jobs:
             <project path="frameworks/opt/telephony" name="LineageOS/android_frameworks_opt_telephony" revision="cc70a318df2d02190218923ce073b562fb773800" />
             <!-- RR 清单把整个 chromium-webview 指到 cm-14.1，该分支已被 LineageOS 删除；
                  换成 LOS 14.1 的办法：只取 patches + prebuilt/arm 两个固定 commit -->
+            <!-- cm-14.1-caf-8916 这个分支在 2019-08 混进了 8.0 的 AudioMix API
+                 （sp<AudioPolicyMix>.promote() / mCbFlags 等），和 7.1 的 frameworks/av
+                 对不上。钉到 2018-02-03 的 CAF 合并点，那还是纯 7.1 接口 -->
+            <remove-project name="LineageOS/android_hardware_qcom_audio" path="hardware/qcom/audio-caf/msm8916" />
+            <project path="hardware/qcom/audio-caf/msm8916" name="LineageOS/android_hardware_qcom_audio" revision="d026b1fda7d75f3d12b727f892fb7489062b5a53" groups="qcom,qcom_audio" />
             <remove-project name="LineageOS/android_external_chromium-webview" />
             <project path="external/chromium-webview/patches" name="LineageOS/android_external_chromium-webview_patches" revision="1c25993282a7d31bfac30d86c3e5f55df9dc0c06">
               <linkfile src="Android.mk" dest="external/chromium-webview/Android.mk" />
