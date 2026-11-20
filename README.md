@@ -19,7 +19,6 @@
 |---|---|---|
 | LineageOS 15.1 (Android 8.1) | `build.yml` | ✅ 可编译、可刷入、日常可用 |
 | LineageOS 14.1 (Android 7.1.2) | `build-14.1.yml` | ✅ 可编译、可刷入；单卡（仅 SIM0） |
-| Resurrection Remix 5.8.5 (Android 7.1.2) | `build-rr.yml` | 🚧 首次构建进行中 |
 
 > 7.1.2 是 LineageOS 的版本起点（LineageOS 由 CM14.1 接续而来），更低版本只能找
 > CyanogenMod 12.1 / 13 的归档分支，那些源码树已无人维护，反而更难编译。
@@ -40,7 +39,7 @@
 1. 打开 **Actions**，选择对应 workflow
 2. **Run workflow**，等待约 2–3 小时
 3. 在 run 页面底部 **Artifacts** 下载：
-   - 成功：`lineage-*.zip` / `ResurrectionRemix-*.zip` + `recovery.img`
+   - 成功：`lineage-*.zip` + `recovery.img`
    - 失败：`build-log-*`（里面是完整编译日志）
 
 artifact 需要登录 GitHub 才能下载，90 天后过期，长期保存请自行转存。
@@ -158,18 +157,13 @@ artifact 需要登录 GitHub 才能下载，90 天后过期，长期保存请自
 搜索结论：GitHub 上**没有任何** SM-G6000 / Galaxy On7 / 三星 msm8916 的 VoLTE 移植成果；
 同类成果（LYF、YU）全部基于高通 QMI IMS + Android 9/10，不能直接套用。
 
-### 2. Resurrection Remix 5.8.5（状态：构建中）
-
-`build-rr.yml` 首次构建尚未跑通，RR 的 `frameworks/base` 停在 2018-01、`telephony` 停在 2016-09，
-同一分支名内相差 16 个月，属于该项目的已知混乱点，需要逐个对齐。
-
-### 3. 短信发送状态误报（状态：未完成）
+### 2. 短信发送状态误报（状态：未完成）
 
 现象：短信实际已送达，手机仍显示"未发送"。`BoardConfig.mk` 里的
 `-DRIL_FIX_SMS_NOT_SENT_ERR` 是 8.1 才存在的宏，7.1 的 `frameworks/opt/telephony`
 中没有任何引用点，等于空操作。修法是把这个宏对应的应答判别逻辑补进 7.1 的 `RIL.java`。
 
-### 4. 内核优化（状态：未做）
+### 3. 内核优化（部分完成）
 
 只做收益明确、风险低的四项，其余（1.8GHz、关 FSync、SELinux permissive、-O3）不做：
 
@@ -189,7 +183,7 @@ artifact 需要登录 GitHub 才能下载，90 天后过期，长期保存请自
 |---|---|
 | 本仓库的设备树 / workflow / 脚本 | GPL-2.0 |
 | 内核源码（Galaxy-MSM8916 仓库） | GPL-2.0 |
-| LineageOS / RR 系统代码 | Apache-2.0（部分 GPL） |
+| LineageOS 系统代码 | Apache-2.0（部分 GPL） |
 | 三星原厂 blobs（vendor/samsung） | 无开源许可，版权归三星，仅随 ROM 分发，不在本协议范围内 |
 
 三者可以共存：Apache-2.0 代码可以并入 GPL-2.0 项目，反之不行。所以把整个仓库定成
@@ -198,6 +192,6 @@ GPL-2.0 在法务上是安全的，只是会让下游无法只用 Apache-2.0 的
 ## 致谢
 
 - [Galaxy-MSM8916](https://github.com/Galaxy-MSM8916) — msm8916 全套设备树、vendor、内核
-- [LineageOS](https://github.com/LineageOS) / [ResurrectionRemix](https://github.com/ResurrectionRemix) — 系统源码
+- [LineageOS](https://github.com/LineageOS) — 系统源码
 - [creeperxyz86/releases_o7prolte](https://github.com/creeperxyz86/releases_o7prolte) — 国际版 17.1 移植，本项目的起点
 - 以及当年花 29 块把它从闲鱼捞出来的自己
