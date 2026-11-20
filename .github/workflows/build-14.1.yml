@@ -372,6 +372,20 @@ jobs:
           if grep -q 'multisim.config", "dsds"' "$F"; then echo "FAIL: 仍残留 dsds"; exit 1; fi
           echo OK
 
+      - name: 6.13 只服务 SIM0：SIM_COUNT=1（libril 编成单卡，不再探测 rild2）
+        working-directory: /mnt/build
+        run: |
+          set -e
+          # SIM_COUNT 是 libril/rild 的编译期开关：=2 时加 -DANDROID_SIM_COUNT_2，
+          # rild 会去 connect "rild2"，没有该 socket 就每 4 秒崩溃（之前循环崩溃的根源）。
+          # 改成 1 后 libril 只有单 socket，SIM1 在 RIL 层彻底不存在。
+          F=device/samsung/on7ltechn/BoardConfig.mk
+          sed -i 's|^SIM_COUNT := 2|SIM_COUNT := 1|' "$F"
+          echo "--- BoardConfig 结果 ---"
+          grep -n "SIM_COUNT\|RIL_FIX_SMS" "$F" || true
+          if grep -q '^SIM_COUNT := 2' "$F"; then echo "FAIL: SIM_COUNT 仍为 2"; exit 1; fi
+          echo OK
+
       - name: 7. 编译
         timeout-minutes: 240
         working-directory: /mnt/build
