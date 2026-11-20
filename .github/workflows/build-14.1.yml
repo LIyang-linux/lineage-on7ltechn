@@ -386,6 +386,39 @@ jobs:
           if grep -q '^SIM_COUNT := 2' "$F"; then echo "FAIL: SIM_COUNT 仍为 2"; exit 1; fi
           echo OK
 
+      - name: 6.14 内核与系统调优（TCP 拥塞控制 / zram lz4 / vm 参数）
+        working-directory: /mnt/build
+        run: |
+          set -e
+          # 只做收益明确、风险低的项；1.8GHz 超频、关 FSync、SELinux permissive、-O3 均不做
+          # 1) 内核 defconfig：VARIANT 文件合并时优先级高于主 defconfig
+          V=kernel/samsung/msm8916/arch/arm/configs/msm8916_sec_o7lte_chnopen_defconfig
+          for opt in "CONFIG_ZRAM_LZ4_COMPRESS=y" "CONFIG_TCP_CONG_CUBIC=y" "CONFIG_TCP_CONG_WESTWOOD=y"; do
+            K=${opt%%=*}
+            sed -i "/^${K}=/d" "$V"
+            echo "$opt" >> "$V"
+          done
+          sed -i '/^CONFIG_DEFAULT_TCP_CONG=/d' "$V"
+          echo 'CONFIG_DEFAULT_TCP_CONG="cubic"' >> "$V"
+          echo "--- defconfig 追加结果 ---"
+          tail -6 "$V"
+
+          # 2) zram 改用 lz4：必须早于 swapon_all 写 disksize，故放在 early-init
+          RC=device/samsung/msm8916-common/rootdir/etc/init.qcom.rc
+          if [ -f "$RC" ] && ! grep -q "o7-tuning" "$RC"; then
+            printf '\n# o7-tuning: zram 用 lz4（需 CONFIG_ZRAM_LZ4_COMPRESS=y，失败无副作用）\non early-init\n    write /sys/block/zram0/comp_algorithm lz4\n' >> "$RC"
+          fi
+
+          # 3) vm / io：zram 场景 swappiness 拉到 100，顺序读放大到 512KB
+          PB=device/samsung/msm8916-common/rootdir/etc/init.qcom.post_boot.sh
+          if [ -f "$PB" ] && ! grep -q "o7-tuning" "$PB"; then
+            printf '\n# o7-tuning: zram 场景的内存与 I/O 参数\n' >> "$PB"
+            echo 'echo 100 > /proc/sys/vm/swappiness' >> "$PB"
+            echo 'echo 512 > /sys/block/mmcblk0/queue/read_ahead_kb' >> "$PB"
+          fi
+          grep -n "o7-tuning" "$RC" "$PB" || true
+          echo OK
+
       - name: 7. 编译
         timeout-minutes: 240
         working-directory: /mnt/build
