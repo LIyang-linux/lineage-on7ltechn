@@ -18,7 +18,7 @@
 | 目标版本 | workflow | 状态 |
 |---|---|---|
 | LineageOS 15.1 (Android 8.1) | `build.yml` | ✅ 可编译、可刷入、日常可用 |
-| LineageOS 14.1 (Android 7.1.2) | `build-14.1.yml` | ⍻ 可点亮；仅单卡 |
+| LineageOS 14.1 (Android 7.1.2) | `build-14.1.yml` | ✅ 可编译、可刷入；单卡（仅 SIM0） |
 | Resurrection Remix 5.8.5 (Android 7.1.2) | `build-rr.yml` | 🚧 首次构建进行中 |
 
 > 7.1.2 是 LineageOS 的版本起点（LineageOS 由 CM14.1 接续而来），更低版本只能找
@@ -84,17 +84,46 @@ artifact 需要登录 GitHub 才能下载，90 天后过期，长期保存请自
 | 各仓库自带 `ril.h` 比 AOSP 旧，缺 `MAX_SOCKET_NAME_LENGTH` | 编译前统一补齐 |
 | `rild` 启动报 `library "libril_shim.so" not found` | 把 `msm8916-common/shim` 的模块加入 `PRODUCT_PACKAGES` |
 | 7.1 的音频 HAL 从 `/system/etc/mixer_paths.xml` 读通路，包内缺失导致完全无声 | 从 17.1 包中提取本机验证过的配置拷入 `/system/etc` |
+| 设备树 `SIM_COUNT := 2`，7.1 的 `libril` 编成多卡后 rild 连不上 `rild2`，每 4 秒崩溃 | 改为 `SIM_COUNT := 1`（见下节单卡限制） |
+| `init_msm8916.cpp` 按 bootloader 卡槽数写死 `dsds`，导致订阅表为空、IMEI 重复 | 改 `dsds_properties()` 为单卡值 |
+| `-DRIL_FIX_SMS_NOT_SENT_ERR` 是 8.1 才有的宏，7.1 telephony 无引用点（空操作） | 记录在案；若短信仍报错需自行移植对应逻辑 |
 
-### GPU 超频说明（重要）
+### GPU 超频说明（看芯片体质，别一概而论）
 
 国行原厂 DTB 的 Adreno 306 频率表为 **400 / 310 / 200 / 19.2 MHz**。
-三方移植内核曾把上限提到 650 MHz，实机会出现**相机 / 浏览器 / TF 卡 / 亮屏崩溃**，
-降回 400 MHz 后恢复正常。本仓库的 boot 默认保持原厂 400 MHz，如需超频请自行改 DTB。
+
+- 650 MHz 并非必然崩溃：社区里不少 8916 机器能稳定跑 650，也有机器一超就出现
+  **相机 / 浏览器 / TF 卡 / 亮屏崩溃**，甚至开机 logo 循环。**能否超取决于这颗
+  SoC 的体质（漏电特性）**，同一型号不同批次都可能不一样。
+- 建议按 400 → 550 → 650 逐档测试，每档至少跑一轮相机、浏览器、亮屏、TF 卡读写，
+  稳定再往上。出现任何异常立刻降档。
+- 本仓库的 boot 默认保持原厂 400 MHz（保证任何人刷入都能开机），超频请自行改 DTB。
+
+### 7.1.2 单卡限制（已固化，不建议再改）
+
+14.1 只支持 **SIM0**，这不是临时规避，而是三层一致后的结果：
+
+| 层 | 改动 | 原因 |
+|---|---|---|
+| `libril`（C，最底层） | `SIM_COUNT := 1` | `=2` 时编入 `-DANDROID_SIM_COUNT_2`，rild 会去连 `rild2`，没有该 socket 就每 4 秒崩溃 |
+| init | `persist.radio.multisim.config=none`、`ro.multisim.simslotcount=1` | 绕开 `init_msm8916.cpp` 的 `dsds_properties()` |
+| framework | `system_prop.mk` 补 `multisim.config=none` | vendor / blob 里的默认值会盖掉 system 的，需显式覆盖 |
+
+其中两个坑值得记录：
+
+- **`dsds` 是 init 在 `/data` 挂载前就 `property_set` 的**，只存在内存不落盘。
+  所以 `rm /data/property/persist.radio.multisim.config` 后重启仍然是 `dsds`，
+  必须改 `init_msm8916.cpp` 或运行期 `setprop`（会触发 `stop ril-daemon; start ril-daemon`）。
+- 属性保持 `dsds` 时，`SubscriptionInfoUpdater.isAllIccIdQueryDone()` 会一直等
+  卡槽 1 的 ICCID，而空卡槽只报 `NOT_READY`（不是 `ABSENT`），于是 `siminfo` 永远为空，
+  设置里显示无 SIM；同时 `PhoneFactory` 建两个 Phone 对象，导致两个 IMEI 相同。
 
 ## 已知问题
 
 - **通话不可用**：国行 2G/3G 退网后，SM-G6000 不支持 VoLTE，插卡只能上网不能打电话
-- **RAM 仅 1.5 GB**：8.1 上多任务容易杀后台，7.1.2 明显更轻
+- **14.1 仅单卡**：`SIM_COUNT=1`，只服务 SIM0，卡槽 2 在软件栈里不存在（原因见上节）
+- **短信可能显示发送失败**：实际已送达但框架判定失败，`RIL_FIX_SMS_NOT_SENT_ERR` 在 7.1 无效
+- **RAM 1.5 GB / 2.0 GB 两个版本**：8.1 上多任务容易杀后台，7.1.2 明显更轻
 - **相机**：部分场景（HDR、闪光灯）可能异常，取决于 blobs 版本
 
 ## 许可证
