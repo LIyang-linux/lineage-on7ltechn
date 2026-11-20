@@ -28,7 +28,7 @@ jobs:
           build-mount-path-ownership: runner:runner
           root-reserve-mb: 10240
           temp-reserve-mb: 4096
-          swap-size-mb: 8192
+          swap-size-mb: 4096
           remove-dotnet: 'true'
           remove-android: 'true'
           remove-haskell: 'true'
@@ -57,18 +57,6 @@ jobs:
           sudo ln -sf "$PY2" /usr/local/bin/python
           echo "python -> $(readlink -f /usr/local/bin/python)"; python --version
           java -version || echo "NO JDK8"
-          # 兜底：确认 swap 真的生效，否则 7GB runner 跑到 dex2oat 必被 OOM 杀
-          if ! swapon --show | grep -q .; then
-            echo "!!! swap 未启用，手动创建 8G"
-            sudo fallocate -l 8G /swapfile2 || sudo dd if=/dev/zero of=/swapfile2 bs=1M count=8192
-            sudo chmod 600 /swapfile2
-            sudo mkswap /swapfile2
-            sudo swapon /swapfile2
-          fi
-          sudo sysctl -w vm.swappiness=60
-          echo "=== 内存与 swap 状态 ==="
-          free -h
-          swapon --show
           df -h / /mnt/build
 
       - name: 3. 配置 git 和 repo
@@ -397,7 +385,7 @@ jobs:
           export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
           export PATH=$JAVA_HOME/bin:$PATH
           # Jack 服务端默认堆太小，16G 机器给到 6G
-          export JACK_SERVER_VM_ARGUMENTS="-Dfile.encoding=UTF-8 -XX:+TieredCompilation -Xmx4g"
+          export JACK_SERVER_VM_ARGUMENTS="-Dfile.encoding=UTF-8 -XX:+TieredCompilation -Xmx6g"
           java -version
           source build/envsetup.sh
           # 14.1 的 breakfast 会先跑 vendor/cm/tools/roomservice.py，失败时静默退出；
@@ -409,14 +397,14 @@ jobs:
             echo "=== LUNCH FAILED ==="; exit 1
           fi
           # 双保险：先把 cmsdk 资源模块单独编出来，避免并行竞态
-          m -j2 org.cyanogenmod.platform-res 2>&1 | tail -n 5
+          m -j4 org.cyanogenmod.platform-res 2>&1 | tail -n 5
           # 行缓冲 + 放宽过滤：把 Install/Package/dex2oat/Image 这些关键阶段打出来，
           # 否则永远只看到最后一条 [89%] Strip 行，无法判断卡在哪
           # mka 是 shell 函数，不能被 stdbuf 包装（会 exit 127）。
           # 用 script 分配 pty，既能强制行缓冲拿到完整日志，又保留 mka 的语义。
           set -o pipefail
           # script -c 会新起一个 sh，里面没有 mka 函数，必须重新 source + lunch
-          script -qfec "bash -c 'source build/envsetup.sh >/dev/null && lunch lineage_on7ltechn-userdebug >/dev/null && mka bacon -j3'" build.log &
+          script -qfec "bash -c 'source build/envsetup.sh >/dev/null && lunch lineage_on7ltechn-userdebug >/dev/null && mka bacon -j4'" build.log &
           SPID=$!
           tail -n +1 -f build.log --pid=$SPID 2>/dev/null | grep --line-buffered -E '^\[ *[0-9]+%|^Install|^Package|^FAILED|error:|ninja: build stopped|^PLATFORM_VERSION|system\.img|boot\.img' &
           GPID=$!
