@@ -351,6 +351,27 @@ jobs:
             echo "WARN: 没找到属性定义，检查 vendor/samsung/on7ltechn 的 product mk"
           fi
 
+      - name: 6.12 单卡化（真正生效的一步）：改 init 的 dsds_properties
+        working-directory: /mnt/build
+        run: |
+          set -e
+          # init_msm8916.cpp 在开机早期按 bootloader 上报的卡槽数(2)调用 dsds_properties()，
+          # 直接 property_set 三个属性。所以只改 build.prop 没用：
+          #   1) 这一步发生在 /data 挂载之前，persist.* 只存在内存里、不落盘
+          #      （所以删 /data/property/persist.radio.multisim.config 后重启仍是 dsds）
+          #   2) ro.* 属性运行期无法修改
+          F=device/samsung/msm8916-common/init/init_msm8916.cpp
+          sed -i 's|property_set("persist.radio.multisim.config", "dsds");|property_set("persist.radio.multisim.config", "none");|' "$F"
+          sed -i 's|property_set("ro.multisim.simslotcount", "2");|property_set("ro.multisim.simslotcount", "1");|' "$F"
+          echo "--- init_msm8916.cpp 结果 ---"
+          grep -n 'multisim\|simslotcount' "$F" || true
+          # class_main.sh 里 dsds/dsda 分支会 start ril-daemon2（6.10 已删除该服务）
+          S=device/samsung/msm8916-common/rootdir/etc/init.class_main.sh
+          sed -i 's|setprop persist.radio.multisim.config dsda|setprop persist.radio.multisim.config none|' "$S" || true
+          echo "--- 校验 ---"
+          if grep -q 'multisim.config", "dsds"' "$F"; then echo "FAIL: 仍残留 dsds"; exit 1; fi
+          echo OK
+
       - name: 7. 编译
         timeout-minutes: 240
         working-directory: /mnt/build
