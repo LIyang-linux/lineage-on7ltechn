@@ -121,10 +121,62 @@ artifact 需要登录 GitHub 才能下载，90 天后过期，长期保存请自
 ## 已知问题
 
 - **通话不可用**：国行 2G/3G 退网后，SM-G6000 不支持 VoLTE，插卡只能上网不能打电话
+  （VoLTE 待办，见下方「未完成 / 以后做」）
 - **14.1 仅单卡**：`SIM_COUNT=1`，只服务 SIM0，卡槽 2 在软件栈里不存在（原因见上节）
 - **短信可能显示发送失败**：实际已送达但框架判定失败，`RIL_FIX_SMS_NOT_SENT_ERR` 在 7.1 无效
 - **RAM 1.5 GB / 2.0 GB 两个版本**：8.1 上多任务容易杀后台，7.1.2 明显更轻
 - **相机**：部分场景（HDR、闪光灯）可能异常，取决于 blobs 版本
+
+## 未完成 / 以后做
+
+以下事项**尚未完成**，留作后续方向，任何感兴趣的人可以按这里的结论接着做。
+
+### 1. VoLTE（状态：未完成，待攻克）
+
+已查清的事实：
+
+| 层 | 现状 |
+|---|---|
+| modem 固件 | **支持**：`modem.vfat.win` 内含 `ims_qmi_registration_apps_service.c`、`ims_qmi_settings_service.c`、`ims_qmi_presence_service.c`、`ims_task.cpp` 等，说明高通 QMI IMS 协议栈完整 |
+| vendor blobs（AP 侧） | **缺失**：只有通用的 `libqmi.so` / `libqmi_cci.so` / `libqmiservices.so`，扫描全部 2391 个文件、1806 个 `.so`，**不存在** `libqti-ims.so`、`libimsqmi*.so`、`libsecims*.so`，也没有 IMS APK |
+| framework | **缺失**：7.1 没有 `ImsService`；三星的 SecIMS 与 TouchWiz 私有接口深度耦合，无法单独搬出 |
+| carrier config | **缺失**：AOSP 的 `CarrierConfig` 无 CMCC 的 VoLTE 参数集与 `ims` APN |
+
+整条链路：
+
+```
+应用 → IMS 框架(✘) → libqti-ims.so(✘) → libqmi_cci(✔) → QMI IMS 服务(✔) → modem IMS 栈(✔)
+```
+
+后续可尝试的方向（按可行性排序）：
+
+1. 从同代 **msm8916 且带高通 IMS** 的机型（如 Jio 定制机 LYF / YU 系列）提取 `libqti-ims.so` 及其 QMI 依赖，验证 ABI 与 QMI 服务版本是否匹配本机 modem。
+2. 在 7.1 上实现一个最小的 IMS 客户端（SIP 注册 + QMI IMS 请求），直接走 `libqmi_cci`，绕过框架层；工作量巨大，但技术上不依赖专有库。
+3. 放弃 7.1，直接在 **15.1（8.1）** 上做：8.1 已有 `ImsService` 框架与 `qti-telephony-common`，缺的仍是 `libqti-ims.so`，但上层障碍少很多。
+4. 补齐 CMCC 的 IMS APN 与 carrier config（前三条通了之后才有意义）。
+
+搜索结论：GitHub 上**没有任何** SM-G6000 / Galaxy On7 / 三星 msm8916 的 VoLTE 移植成果；
+同类成果（LYF、YU）全部基于高通 QMI IMS + Android 9/10，不能直接套用。
+
+### 2. Resurrection Remix 5.8.5（状态：构建中）
+
+`build-rr.yml` 首次构建尚未跑通，RR 的 `frameworks/base` 停在 2018-01、`telephony` 停在 2016-09，
+同一分支名内相差 16 个月，属于该项目的已知混乱点，需要逐个对齐。
+
+### 3. 短信发送状态误报（状态：未完成）
+
+现象：短信实际已送达，手机仍显示"未发送"。`BoardConfig.mk` 里的
+`-DRIL_FIX_SMS_NOT_SENT_ERR` 是 8.1 才存在的宏，7.1 的 `frameworks/opt/telephony`
+中没有任何引用点，等于空操作。修法是把这个宏对应的应答判别逻辑补进 7.1 的 `RIL.java`。
+
+### 4. 内核优化（状态：未做）
+
+只做收益明确、风险低的四项，其余（1.8GHz、关 FSync、SELinux permissive、-O3）不做：
+
+- `CONFIG_WQ_POWER_EFFICIENT_DEFAULT=y`（省电）
+- Adreno Idler / simple_ondemand（GPU 空闲降频）
+- Touch Boost（响应）
+- zram 512MB + lz4（2GB 机型的多任务收益大于超频）
 
 ## 许可证
 
