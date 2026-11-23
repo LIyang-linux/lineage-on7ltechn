@@ -325,65 +325,64 @@ jobs:
           grep -n "socket rild\|ril-daemon" "$F" | head -12
           ! grep -q "ril-daemon1" "$F"
 
-      - name: 6.11 单卡化：修 ril_class 与 multisim（14.1 上 sec-ril 对空卡槽只报 NOT_READY）
+      - name: 6.11 修 ril_class（7.1 无 SamsungQcomRIL），保持 dsds
         working-directory: /mnt/build
         run: |
           set -e
-          # 两个属性都是 8.1 时代的东西，直接搬到 7.1 会连锁失败：
-          # 1) ro.telephony.ril_class=SamsungQcomRIL
-          #    该类在 7.1 的 telephony 里不存在，PhoneFactory.instantiateCustomRIL()
-          #    反射失败后进入 while(true) sleep，initSubscriptionController 永不执行。
-          # 2) persist.radio.multisim.config=dsds
-          #    SubscriptionInfoUpdater.isAllIccIdQueryDone() 要求两个卡槽都有 ICCID，
-          #    而空卡槽 1 只上报 NOT_READY（不是 ABSENT），mIccId[1] 永远 null，
-          #    于是 siminfo 永远不写，设置里一直显示无 SIM。
-          #    实测切飞行模式重新读卡后订阅才出现 —— 证明链路本身通，只是卡在等待。
+          # ro.telephony.ril_class=SamsungQcomRIL 是 8.1 的东西：7.1 的 telephony 里
+          # 没有这个类，PhoneFactory.instantiateCustomRIL() 反射失败后会 while(true)
+          # sleep，initSubscriptionController 永不执行。必须改。
+          #
+          # persist.radio.multisim.config 保持 dsds —— 双卡。
+          # 之前改成 none 是为了绕开 SubscriptionInfoUpdater.isAllIccIdQueryDone()：
+          #   sec-ril 对空卡槽只报 NOT_READY（不是 ABSENT），mIccId[1] 永远 null，
+          #   siminfo 永不写入 → 设置里显示无 SIM。
+          # 现在改为在第二步修 framework（容忍空卡槽），不再需要牺牲双卡。
           n=0
           while IFS= read -r f; do
             sed -i 's|ro\.telephony\.ril_class=SamsungQcomRIL|ro.telephony.ril_class=RIL|g' "$f"
-            sed -i 's|persist\.radio\.multisim\.config=dsds|persist.radio.multisim.config=none|g' "$f"
             echo "== $f"
             grep -nE "ro\.telephony\.ril_class|persist\.radio\.multisim\.config" "$f" || true
             n=$((n+1))
-          done < <(grep -rlE "SamsungQcomRIL|persist\.radio\.multisim\.config=dsds" device vendor 2>/dev/null)
+          done < <(grep -rlE "SamsungQcomRIL" device vendor 2>/dev/null)
           echo "patched files: $n"
-          if [ "$n" -eq 0 ]; then
-            echo "WARN: 没找到属性定义，检查 vendor/samsung/on7ltechn 的 product mk"
+          # 确保没有把 dsds 改成 none 的残留
+          if grep -rq 'persist.radio.multisim.config=none' device vendor 2>/dev/null; then
+            echo "WARN: 仍有 multisim.config=none"
+            grep -rn 'persist.radio.multisim.config=none' device vendor 2>/dev/null | head
           fi
 
-      - name: 6.12 单卡化（真正生效的一步）：改 init 的 dsds_properties
+      - name: 6.12 保持 init 的 dsds_properties（双卡）
         working-directory: /mnt/build
         run: |
           set -e
           # init_msm8916.cpp 在开机早期按 bootloader 上报的卡槽数(2)调用 dsds_properties()，
           # 直接 property_set 三个属性。所以只改 build.prop 没用：
           #   1) 这一步发生在 /data 挂载之前，persist.* 只存在内存里、不落盘
-          #      （所以删 /data/property/persist.radio.multisim.config 后重启仍是 dsds）
           #   2) ro.* 属性运行期无法修改
+          # 双卡需要 dsds + simslotcount=2，这里确认它们没被改掉。
           F=device/samsung/msm8916-common/init/init_msm8916.cpp
-          sed -i 's|property_set("persist.radio.multisim.config", "dsds");|property_set("persist.radio.multisim.config", "none");|' "$F"
-          sed -i 's|property_set("ro.multisim.simslotcount", "2");|property_set("ro.multisim.simslotcount", "1");|' "$F"
           echo "--- init_msm8916.cpp 结果 ---"
           grep -n 'multisim\|simslotcount' "$F" || true
-          # class_main.sh 里 dsds/dsda 分支会 start ril-daemon2（6.10 已删除该服务）
+          # class_main.sh：dsds/dsda 分支会 start ril-daemon2，双卡需要保留
           S=device/samsung/msm8916-common/rootdir/etc/init.class_main.sh
-          sed -i 's|setprop persist.radio.multisim.config dsda|setprop persist.radio.multisim.config none|' "$S" || true
-          echo "--- 校验 ---"
-          if grep -q 'multisim.config", "dsds"' "$F"; then echo "FAIL: 仍残留 dsds"; exit 1; fi
+          grep -n 'multisim.config' "$S" || true
+          # 校验：必须是 dsds/none 之外的值
+          if grep -q 'multisim.config", "none"' "$F"; then echo "FAIL: dsds 被改成 none"; exit 1; fi
+          if grep -q 'simslotcount", "1"' "$F"; then echo "FAIL: simslotcount 被改成 1"; exit 1; fi
           echo OK
 
-      - name: 6.13 只服务 SIM0：SIM_COUNT=1（libril 编成单卡，不再探测 rild2）
+      - name: 6.13 保持双卡编译：SIM_COUNT=2
         working-directory: /mnt/build
         run: |
           set -e
           # SIM_COUNT 是 libril/rild 的编译期开关：=2 时加 -DANDROID_SIM_COUNT_2，
-          # rild 会去 connect "rild2"，没有该 socket 就每 4 秒崩溃（之前循环崩溃的根源）。
-          # 改成 1 后 libril 只有单 socket，SIM1 在 RIL 层彻底不存在。
+          # rild 会去 connect "rild2"（6.10 已加该 socket）。
+          # 双卡需要保持 2。
           F=device/samsung/on7ltechn/BoardConfig.mk
-          sed -i 's|^SIM_COUNT := 2|SIM_COUNT := 1|' "$F"
           echo "--- BoardConfig 结果 ---"
           grep -n "SIM_COUNT\|RIL_FIX_SMS" "$F" || true
-          if grep -q '^SIM_COUNT := 2' "$F"; then echo "FAIL: SIM_COUNT 仍为 2"; exit 1; fi
+          if grep -q '^SIM_COUNT := 1' "$F"; then echo "FAIL: SIM_COUNT 为 1"; exit 1; fi
           echo OK
 
       - name: 7. 编译
