@@ -1,7 +1,18 @@
 # 中国移动 VoLTE 移植方案（on7ltechn / LineageOS 14.1）
 
-> 状态：**调研完成，可行**（2026-11-23）
+> 状态：**组件已凑齐，接口确认兼容；待做零风险验证**（2026-11-23 更新）
 > 目标：让三星 Galaxy On7 国行（SM-G6000）在**中国移动**网络下使用 VoLTE 语音。
+
+### 更新摘要（2026-11-23 深夜）
+
+| 环节 | 结论 |
+|---|---|
+| ① modem VoLTE 配置 | ✅ 有现成（高通 `qcom-carrier-autocfg` 的 `china/cmcc/csfb/dsds/volte_co/mcfg_sw.mbn`，标识 `CMCC_C_DS_VC`，含移动 IMS 服务器 `xcap.ims.mnc000.mcc460`） |
+| ② `imsservice.apk` | ✅ 找到**骁龙版**：`SolidEva/sm8250-samsung-imsservice-apk`（SM8250=骁龙865，含中国运营商 VoLTE 图标） |
+| ③ 依赖 jar | ✅ **原厂固件全有**：`ims-common.jar`、`imsmanager.jar`、`telephony-common.jar`、`rcsopenapi.jar`、`commonimsinterface.jar`、`okhttp.jar` |
+| ④ `IImsService` AIDL | ✅ **7.1 与 Android 10 方法签名一致**（`open/close/createCallSession/getUtInterface/getEcbmInterface/...`） |
+| ⑤ apk 编译版本 | ⚠️ `compileSdk=30`（Android 11），需适配 7.1 API |
+| ⑥ **零风险验证通道** | ✅ modem 支持 NV 项 `/nv/item_files/mcfg/mcfg_config_force_load` **强制加载 mcfg**（另有 `/nv/item_files/conf/mcfg.conf`）——**不用刷 modem 分区** |
 
 ---
 
@@ -174,6 +185,77 @@ adb shell getprop | grep -iE "ims|volte"
 | 4 | 真机 VoLTE 通话测试 |
 
 **前置**：14.1 双卡版稳定（本方案与双卡共用 modem/RIL 链路，先保证双卡不回退）。
+
+---
+
+## 8. 零风险验证方案（最低风险优先）
+
+**原则**：先不改手机任何持久化数据，用**可恢复**的手段验证。
+
+### 8.1 modem 的免刷加载机制（关键发现）
+
+modem 固件里存在：
+
+```
+/nv/item_files/mcfg/mcfg_config_force_load      ← 强制加载指定 mcfg
+/nv/item_files/mcfg/mcfg_def_config_force_load
+/nv/item_files/mcfg/mcfg_autoselect_by_uim      ← 按 UIM 自动选择
+/nv/item_files/conf/mcfg.conf                   ← 文本配置
+/dev/mcfg/sw_default_config
+/dev/mcfg/hw_default_config
+```
+
+→ **可通过 NV 项临时强制加载 volte_co 配置，无需重刷 modem 分区。**
+
+### 8.2 风险阶梯
+
+| 阶段 | 操作 | 风险 | 恢复方式 |
+|---|---|---|---|
+| **0** | **纯只读**：`getprop`、`dmesg`、`logcat`、读 `/nv` | **零** | 无需恢复 |
+| **1** | 备份 `/modemst1`、`/modemst2` 后写 NV `mcfg_config_force_load`，重启 modem | 低 | 还原备份 / 重启失效 |
+| **2** | 持久化（写入 NV 或刷 modem 分区） | 中 | 用原厂 `modem.vfat.win` 恢复 |
+
+### 8.3 阶段 0 检查清单（可立即执行）
+
+```bash
+# 1. modem/mcfg 相关属性
+adb shell getprop | grep -iE 'mcfg|ims|volte|vowifi'
+
+# 2. diag 设备（写 NV 需要）
+adb shell ls -l /dev/diag* /dev/qmi*
+
+# 3. modem 分区与 NV
+adb shell ls /dev/block/bootdevice/by-name/ | grep -iE 'modem|efs'
+
+# 4. 当前 IMS 状态
+adb shell dumpsys ims 2>/dev/null | head -20
+adb logcat -d | grep -iE 'ims|volte|mcfg' | tail -30
+```
+
+### 8.4 阶段 1（低风险）步骤
+
+1. **备份**（必须）：
+   ```bash
+   adb shell "dd if=/dev/block/bootdevice/by-name/modemst1 of=/sdcard/modemst1.bak"
+   adb shell "dd if=/dev/block/bootdevice/by-name/modemst2 of=/sdcard/modemst2.bak"
+   ```
+2. 放置 `volte_co/mcfg_sw.mbn` 到 modem 可读路径
+3. 写 NV `mcfg_config_force_load`（值需查 modem 文档，通常为配置索引）
+4. **重启 modem**（`setprop ctl.restart ril-daemon` 或重启手机）
+5. 观察：`logcat` 里 modem 是否加载 volte_co、IMS 是否注册
+
+**回退**：还原备份 或 重启（若未持久化）。
+
+### 8.5 apk 适配（阶段 2+）
+
+- SM8250 的 `GoogleImsService` 继承 `com.android.ims.internal.IImsService$Stub`（AOSP 标准）
+- 7.1 的 `IImsService.aidl` 与 Android 10 **方法签名一致** → 接口层基本不用改
+- 主要工作：
+  1. 反编译 apk（仓库已提供 apktool 产物）
+  2. 排查 Android 8+ API 调用（`compileSdk=30`）
+  3. 补 `sharedUserId=android.uid.system` 的**平台签名**
+  4. 配 SELinux 策略（原厂 `etc/permissions/imscm.xml` 可参考）
+  5. 装依赖 jar（原厂已全有）
 
 ---
 
