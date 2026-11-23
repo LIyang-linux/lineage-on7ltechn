@@ -385,6 +385,51 @@ jobs:
           if grep -q '^SIM_COUNT := 1' "$F"; then echo "FAIL: SIM_COUNT 为 1"; exit 1; fi
           echo OK
 
+      - name: 6.14 双卡第二步：修 framework，容忍空卡槽（NOT_READY）
+        working-directory: /mnt/build
+        run: |
+          set -e
+          # 根因：三星 sec-ril 对空卡槽上报 NOT_READY（不是 ABSENT）。
+          # SubscriptionInfoUpdater 的 ACTION_SIM_STATE_CHANGED 只处理
+          # ABSENT/UNKNOWN/IO_ERROR/RESTRICTED，NOT_READY 落入 "Ignoring simStatus"，
+          # 于是 mIccId[slot] 永远为 null → isAllIccIdQueryDone() 永远 false →
+          # updateSubscriptionInfoByIccId() 永不执行 → siminfo 不写入 → 设置里显示无 SIM。
+          #
+          # 改法：把 NOT_READY 视同 ABSENT（走 handleSimAbsentOrError，写 ICCID_STRING_FOR_NO_SIM）。
+          # 已本地用状态机模拟验证：单卡(NOT_READY)/双卡/无卡/真 ABSENT 四种场景行为正确。
+          F=frameworks/opt/telephony/src/java/com/android/internal/telephony/SubscriptionInfoUpdater.java
+          test -f "$F"
+          python3 - "$F" <<'PYEOF'
+          import sys
+          p = sys.argv[1]
+          t = open(p, encoding='utf-8').read()
+          old = """                if (IccCardConstants.INTENT_VALUE_ICC_ABSENT.equals(simStatus)) {
+                    sendMessage(obtainMessage(EVENT_SIM_ABSENT, slotId, -1));
+                } else if"""
+          new = """                if (IccCardConstants.INTENT_VALUE_ICC_ABSENT.equals(simStatus)
+                        || IccCardConstants.INTENT_VALUE_ICC_NOT_READY.equals(simStatus)) {
+                    // Samsung sec-ril reports NOT_READY (not ABSENT) for an empty slot.
+                    // Without this the slot's mIccId stays null forever, so
+                    // isAllIccIdQueryDone() never returns true and siminfo is never
+                    // written (Settings shows no SIM). Treat NOT_READY as no-SIM.
+                    sendMessage(obtainMessage(EVENT_SIM_ABSENT, slotId, -1));
+                } else if"""
+          if old not in t:
+              print('FAIL: 未找到目标代码块（可能已打过补丁或上游改版）')
+              sys.exit(1)
+          if t.count(old) != 1:
+              print('FAIL: 目标代码块出现 %d 次，期望 1 次' % t.count(old))
+              sys.exit(1)
+          open(p, 'w', encoding='utf-8', newline='\n').write(t.replace(old, new, 1))
+          print('patched SubscriptionInfoUpdater.java')
+          PYEOF
+          echo "--- 校验 ---"
+          grep -n -A4 "INTENT_VALUE_ICC_NOT_READY.equals(simStatus)" "$F" | head -10
+          if ! grep -q "INTENT_VALUE_ICC_NOT_READY.equals(simStatus)" "$F"; then
+            echo "FAIL: 补丁未生效"; exit 1
+          fi
+          echo OK
+
       - name: 7. 编译
         timeout-minutes: 240
         working-directory: /mnt/build
