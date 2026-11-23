@@ -303,27 +303,40 @@ jobs:
           echo 'TARGET_OTA_ASSERT_DEVICE := on7ltechn,o7prolte,o7lte,on7lte' >> "$B"
           grep -n "TARGET_OTA_ASSERT_DEVICE" "$B"
 
-      - name: 6.10 rild 双卡 socket（7.1 的 libril 是单进程双 socket，不是 5.1 的双进程）
+      - name: 6.10 双卡：ril-daemon2 服务（加载 libsec-ril-dsds.so）
         working-directory: /mnt/build
         run: |
           set -e
+          # 原厂配置里双卡 RIL 服务叫 ril-daemon1（-l libsec-ril-dsds.so -c 2），
+          # 但 init.class_main.sh 在 dsds/dsda 时 start 的是 ril-daemon2 —— 名字对不上，
+          # 所以双卡进程根本起不来。这里把服务名与 start 统一改成 ril-daemon2。
+          # socket rild2/rild-debug2 就定义在该服务里（libril SIM_COUNT=2 会连它）。
           F=device/samsung/msm8916-common/rootdir/etc/init.qcom.rc
           python3 - "$F" <<'EOF'
           import sys
           p=sys.argv[1]; t=open(p).read()
+          # 1) 幂等：移除旧版误加到 ril-daemon 主服务的 rild2/rild-debug2 socket
           t=t.replace("""    socket rild-cas stream 660 casdrm mmb
-          ""","""    socket rild-cas stream 660 casdrm mmb
               socket rild2 stream 660 root radio
               socket rild-debug2 stream 660 radio system
+          ""","""    socket rild-cas stream 660 casdrm mmb
           """)
-          i=t.find("# RIL for multi rild")
-          j=t.find("service usb_uicc_enable", i)
-          if i>0 and j>i: t=t[:i]+t[j:]
-          t=t.replace("    start ril-daemon1\n","")
+          # 2) 服务名 ril-daemon1 -> ril-daemon2（匹配 init.class_main.sh）
+          n1 = t.count("service ril-daemon1 ")
+          t = t.replace("service ril-daemon1 ", "service ril-daemon2 ")
+          # 3) start 语句同步改名
+          n2 = t.count("start ril-daemon1")
+          t = t.replace("start ril-daemon1", "start ril-daemon2")
           open(p,"w").write(t)
+          print("renamed service: %d, renamed start: %d" % (n1, n2))
           EOF
-          grep -n "socket rild\|ril-daemon" "$F" | head -12
-          ! grep -q "ril-daemon1" "$F"
+          echo "--- 结果 ---"
+          grep -n "service ril-daemon\|start ril-daemon\|libsec-ril-dsds\|socket rild2" "$F" | head -15
+          # 校验：必须存在 dsds 服务，且没有残留的 ril-daemon1
+          grep -q "service ril-daemon2 /system/bin/rild -l /system/lib/libsec-ril-dsds.so -c 2" "$F" \
+            || { echo "FAIL: ril-daemon2(dsds) 不存在"; exit 1; }
+          ! grep -q "ril-daemon1" "$F" || { echo "FAIL: 仍有 ril-daemon1"; exit 1; }
+          echo OK
 
       - name: 6.11 修 ril_class（7.1 无 SamsungQcomRIL），保持 dsds
         working-directory: /mnt/build
