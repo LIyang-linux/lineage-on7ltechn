@@ -398,33 +398,47 @@ jobs:
           # 改法：把 NOT_READY 视同 ABSENT（走 handleSimAbsentOrError，写 ICCID_STRING_FOR_NO_SIM）。
           # 已本地用状态机模拟验证：单卡(NOT_READY)/双卡/无卡/真 ABSENT 四种场景行为正确。
           F=frameworks/opt/telephony/src/java/com/android/internal/telephony/SubscriptionInfoUpdater.java
-          test -f "$F"
+          test -f "$F" || { echo "FAIL: 文件不存在 $F"; exit 1; }
           python3 - "$F" <<'PYEOF'
-          import sys
+          import sys, re
           p = sys.argv[1]
-          t = open(p, encoding='utf-8').read()
-          old = """                if (IccCardConstants.INTENT_VALUE_ICC_ABSENT.equals(simStatus)) {
-                    sendMessage(obtainMessage(EVENT_SIM_ABSENT, slotId, -1));
-                } else if"""
-          new = """                if (IccCardConstants.INTENT_VALUE_ICC_ABSENT.equals(simStatus)
-                        || IccCardConstants.INTENT_VALUE_ICC_NOT_READY.equals(simStatus)) {
-                    // Samsung sec-ril reports NOT_READY (not ABSENT) for an empty slot.
-                    // Without this the slot's mIccId stays null forever, so
-                    // isAllIccIdQueryDone() never returns true and siminfo is never
-                    // written (Settings shows no SIM). Treat NOT_READY as no-SIM.
-                    sendMessage(obtainMessage(EVENT_SIM_ABSENT, slotId, -1));
-                } else if"""
-          if old not in t:
-              print('FAIL: 未找到目标代码块（可能已打过补丁或上游改版）')
+          t = open(p, encoding='utf-8', newline='').read()
+          print('文件行数: %d, CRLF 数: %d' % (t.count('\n'), t.count('\r\n')))
+          # 容忍 CRLF / 缩进差异（} 的缩进比 sendMessage 少，不能要求一致）
+          pat = re.compile(
+              r"if \(IccCardConstants\.INTENT_VALUE_ICC_ABSENT\.equals\(simStatus\)\) \{"
+              r"(?P<ws>[ \t]*\r?\n[ \t]*)"
+              r"sendMessage\(obtainMessage\(EVENT_SIM_ABSENT, slotId, -1\)\);"
+              r"[ \t]*\r?\n[ \t]*\} else if")
+          m = pat.search(t)
+          if not m:
+              print('FAIL: 未匹配到 ABSENT 分支')
+              i = t.find('INTENT_VALUE_ICC_ABSENT.equals(simStatus)')
+              if i < 0:
+                  print('连 ABSENT 分支都不存在')
+              else:
+                  print('实际内容片段:')
+                  print(repr(t[max(0, i - 120):i + 400]))
               sys.exit(1)
-          if t.count(old) != 1:
-              print('FAIL: 目标代码块出现 %d 次，期望 1 次' % t.count(old))
-              sys.exit(1)
-          open(p, 'w', encoding='utf-8', newline='\n').write(t.replace(old, new, 1))
+          ws = m.group('ws')
+          new = ("if (IccCardConstants.INTENT_VALUE_ICC_ABSENT.equals(simStatus)"
+                 + ws.replace('\r\n', '\n') + "|| IccCardConstants.INTENT_VALUE_ICC_NOT_READY"
+                 ".equals(simStatus)) {" + ws +
+                 "// Samsung sec-ril reports NOT_READY (not ABSENT) for an empty slot." + ws +
+                 "// Without this the slot's mIccId stays null forever, so" + ws +
+                 "// isAllIccIdQueryDone() never returns true and siminfo is never" + ws +
+                 "// written (Settings shows no SIM). Treat NOT_READY as no-SIM." + ws +
+                 "sendMessage(obtainMessage(EVENT_SIM_ABSENT, slotId, -1));" + ws +
+                 "} else if")
+          # 保持原文件的行尾风格
+          if '\r\n' in t:
+              new = new.replace('\n', '\r\n')
+          out = t[:m.start()] + new + t[m.end():]
+          open(p, 'w', encoding='utf-8', newline='').write(out)
           print('patched SubscriptionInfoUpdater.java')
           PYEOF
           echo "--- 校验 ---"
-          grep -n -A4 "INTENT_VALUE_ICC_NOT_READY.equals(simStatus)" "$F" | head -10
+          grep -n "INTENT_VALUE_ICC_NOT_READY.equals(simStatus)" "$F" | head -3
           if ! grep -q "INTENT_VALUE_ICC_NOT_READY.equals(simStatus)" "$F"; then
             echo "FAIL: 补丁未生效"; exit 1
           fi
