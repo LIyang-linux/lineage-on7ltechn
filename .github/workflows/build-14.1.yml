@@ -470,47 +470,30 @@ jobs:
           # SM8250 的 imsservice.apk 需要 Android 9 引入的 android.telephony.ims.*；
           # LineageOS cm-14.1（7.1）只有 com.android.ims.internal.*（旧接口）。
           #
-          # 放到 frameworks/opt/telephony/src/java/：该模块用 all-java-files-under/all-Iaidl-files-under
-          # 自动收集 src/java 下所有 .java/.aidl，无需改 Android.mk；且与 Phone/ImsPhoneConnection
-          # 同模块（framework 模块看不到它们）。
+          # 放到 frameworks/base/telephony/java：base/Android.mk 用
+          # find-other-java-files(FRAMEWORKS_BASE_SUBDIRS) 自动收集该目录，
+          # 且 base 的旧 IMS aidl（com/android/ims/internal/*）编译时也需要能 import 新类型，
+          # 两者同属 framework 模块才不会出现循环依赖。
           S="$GITHUB_WORKSPACE/repo-src/ims-compat/src"
-          echo "WORKSPACE=$GITHUB_WORKSPACE"
-          ls "$GITHUB_WORKSPACE/repo-src/ims-compat" | head -3
           test -d "$S" || { echo "FAIL: $S 不存在"; exit 1; }
-          D=frameworks/opt/telephony/src/java
-          mkdir -p "$D/android/telephony" "$D/com/android"
-          # 注意：cp -r SRC DIR/ 会把目录本身改名为 DIR/<basename>，
-          # 必须指到父目录，才能让包路径保持 android/telephony/ims 与 com/android/ims。
+          D=frameworks/base/telephony/java
+          mkdir -p "$D/android/telephony"
           cp -r "$S/android/telephony/ims" "$D/android/telephony/"
-          # Android 7.1 的 aidl 只对“interface”型 aidl 生成代码；
-          # parcelable 型 aidl 只做类型解析（如 7.1 的 ServiceState.aidl 就在 aidl_files 而非 LOCAL_SRC_FILES）。
-          # 所以 parcelable aidl 不能留在 src/java（会被 all-Iaidl-files-under 当编译目标 →
-          # "refusing to generate code from aidl file defining parcelable"），
-          # 移到独立目录并通过 LOCAL_AIDL_INCLUDES 提供给 interface aidl import。
-          P=frameworks/opt/telephony/aidl
+          # parcelable 型 aidl 在 7.1 不能作为编译目标（aidl 拒绝生成代码），
+          # 只用于给 interface 型 aidl 做 import 解析 → 移到独立 include 目录。
+          P=frameworks/base/telephony/aidl
           mkdir -p "$P"
           for a in $(find "$D/android/telephony/ims" -name "*.aidl"); do
             if grep -q "parcelable" "$a" && ! grep -q "interface" "$a"; then
-              # 保持包路径，且自动创建 feature/ stub/ 等子目录
               rel=${a#$D/android/telephony/ims/}
               mkdir -p "$P/android/telephony/ims/$(dirname "$rel")"
               cp "$a" "$P/android/telephony/ims/$rel"
               rm -f "$a"
             fi
           done
-          # 让该目录参与 aidl include（与 LOCAL_PATH/src/java 同级）
-          python3 - frameworks/opt/telephony/Android.mk <<'PYEOF'
-          import sys
-          p=sys.argv[1]; t=open(p).read()
-          old='LOCAL_AIDL_INCLUDES := $(LOCAL_PATH)/src/java\n'
-          new='LOCAL_AIDL_INCLUDES := $(LOCAL_PATH)/src/java $(LOCAL_PATH)/aidl\n'
-          if old in t and '$(LOCAL_PATH)/aidl' not in t:
-              t=t.replace(old,new,1); open(p,'w').write(t); print('patched LOCAL_AIDL_INCLUDES')
-          else:
-              print('skip (already or anchor missing)')
-          PYEOF
-          echo "ims 编译文件数: $(find "$D/android/telephony/ims" -type f | wc -l)"
-          echo "aidl 类型目录: $(find "$P" -type f | wc -l)"
+          echo "java/aidl 就位:"
+          echo "  编译源 $(find "$D/android/telephony/ims" -type f | wc -l) 个"
+          echo "  类型定义 $(find "$P" -type f | wc -l) 个"
 
       - name: 6.16b 旧 IMS aidl 升级为 Android 9 版（新类型签名）
         working-directory: /mnt/build
@@ -527,30 +510,53 @@ jobs:
           echo "覆盖后 old aidl: $(ls "$OLD"/*.aidl | wc -l) 个"
           ls "$OLD"
 
-      - name: 6.16c 注册新增的旧 aidl 到 frameworks/base/Android.mk
+      - name: 6.16c 注册新 IMS aidl 并补 include 路径
         working-directory: /mnt/build
         run: |
           set -e
           MK=frameworks/base/Android.mk
           python3 - "$MK" <<'PYEOF'
-          import sys, os, glob
+          import sys, glob, os
           mk=sys.argv[1]; t=open(mk).read()
           base='frameworks/base/'
-          d=base+'telephony/java/com/android/ims/internal'
-          new=[]
-          for p in sorted(glob.glob(d+'/*.aidl')):
-              rel=p[len(base):]
-              if rel not in t:
-                  new.append(rel)
-          if not new:
-              print('无需新增'); sys.exit(0)
           anchor='\ttelephony/java/com/android/internal/telephony/ISmsSecurityAgent.aidl \\\n'
           if anchor not in t:
               print('FAIL: 锚点缺失'); sys.exit(1)
-          block=''.join('\t%s \\\n'%x for x in new)
-          open(mk,'w',encoding='utf-8',newline='\n').write(t.replace(anchor, anchor+block, 1))
-          print('新增 %d 个:'%len(new))
-          for x in new: print('   ',x)
+          new=[]
+          # 1) 新包 android.telephony.ims 下的 interface 型 aidl
+          for p in sorted(glob.glob(base+'telephony/java/android/telephony/ims/**/*.aidl', recursive=True)):
+              rel=p[len(base):]
+              body=open(p,encoding='utf-8',errors='replace').read()
+              if 'parcelable' in body and 'interface' not in body:
+                  continue
+              if rel not in t:
+                  new.append(rel)
+          # 2) 旧接口目录里新增的 aidl（9.0 多出来的那几个）
+          for p in sorted(glob.glob(base+'telephony/java/com/android/ims/internal/*.aidl')):
+              rel=p[len(base):]
+              if rel not in t:
+                  new.append(rel)
+          if new:
+              block=''.join('\t%s \\\n'%x for x in new)
+              t=t.replace(anchor, anchor+block, 1)
+              print('注册 %d 个 aidl:'%len(new))
+              for x in new: print('   ',x)
+          else:
+              print('aidl 无需新增')
+          # 3) parcelable aidl 的类型解析目录加入 include
+          if 'telephony/aidl' not in t:
+              t=t.replace(anchor, anchor, 1)
+              # LOCAL_AIDL_INCLUDES 段
+              marker='LOCAL_AIDL_INCLUDES +=\n'
+              ins='LOCAL_AIDL_INCLUDES += $(LOCAL_PATH)/telephony/aidl\n'
+              if marker in t:
+                  t=t.replace(marker, ins+marker, 1)
+                  print('已加 LOCAL_AIDL_INCLUDES(telephony/aidl)')
+              else:
+                  m2='LOCAL_AIDL_INCLUDES +=' 
+                  i=t.find(m2)
+                  print('WARN: 未找到 LOCAL_AIDL_INCLUDES 段' if i<0 else 'skip')
+          open(mk,'w',encoding='utf-8',newline='\n').write(t)
           PYEOF
 
       - name: 6.16 补 CallbackExecutor 注解（core/java）
