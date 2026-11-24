@@ -18,7 +18,7 @@
 | 目标版本 | workflow | 状态 |
 |---|---|---|
 | LineageOS 15.1 (Android 8.1) | `build.yml` | ✅ 可编译、可刷入、日常可用 |
-| LineageOS 14.1 (Android 7.1.2) | `build-14.1.yml` | ✅ 可编译、可刷入；单卡（仅 SIM0） |
+| LineageOS 14.1 (Android 7.1.2) | `build-14.1.yml` | 🔧 **双卡修复 + VoLTE 移植进行中**（原单卡，见下节） |
 
 > 7.1.2 是 LineageOS 的版本起点（LineageOS 由 CM14.1 接续而来），更低版本只能找
 > CyanogenMod 12.1 / 13 的归档分支，那些源码树已无人维护，反而更难编译。
@@ -83,8 +83,8 @@ artifact 需要登录 GitHub 才能下载，90 天后过期，长期保存请自
 | 各仓库自带 `ril.h` 比 AOSP 旧，缺 `MAX_SOCKET_NAME_LENGTH` | 编译前统一补齐 |
 | `rild` 启动报 `library "libril_shim.so" not found` | 把 `msm8916-common/shim` 的模块加入 `PRODUCT_PACKAGES` |
 | 7.1 的音频 HAL 从 `/system/etc/mixer_paths.xml` 读通路，包内缺失导致完全无声 | 从 17.1 包中提取本机验证过的配置拷入 `/system/etc` |
-| 设备树 `SIM_COUNT := 2`，7.1 的 `libril` 编成多卡后 rild 连不上 `rild2`，每 4 秒崩溃 | 改为 `SIM_COUNT := 1`（见下节单卡限制） |
-| `init_msm8916.cpp` 按 bootloader 卡槽数写死 `dsds`，导致订阅表为空、IMEI 重复 | 改 `dsds_properties()` 为单卡值 |
+| 设备树 `SIM_COUNT := 2`，7.1 的 `libril` 编成多卡后 rild 连不上 `rild2`，每 4 秒崩溃 | **改名原厂服务为 `ril-daemon2`**（对齐 `class_main.sh`）并保留 `libsec-ril-dsds.so` |
+| `init_msm8916.cpp` 写死 `dsds`，空卡槽报 `NOT_READY` 导致 siminfo 不写入、IMEI 重复 | **framework 补丁**：`SubscriptionInfoUpdater` 把 `NOT_READY` 视同 `ABSENT` |
 | `-DRIL_FIX_SMS_NOT_SENT_ERR` 是 8.1 才有的宏，7.1 telephony 无引用点（空操作） | 记录在案；若短信仍报错需自行移植对应逻辑 |
 
 ### GPU 超频说明（看芯片体质，别一概而论）
@@ -98,30 +98,32 @@ artifact 需要登录 GitHub 才能下载，90 天后过期，长期保存请自
   稳定再往上。出现任何异常立刻降档。
 - 本仓库的 boot 默认保持原厂 400 MHz（保证任何人刷入都能开机），超频请自行改 DTB。
 
-### 7.1.2 单卡限制（已固化，不建议再改）
+### 14.1 双卡（已解除单卡化，CI 迭代中）
 
-14.1 只支持 **SIM0**，这不是临时规避，而是三层一致后的结果：
+早期版本是**单卡**（`SIM_COUNT=1`），当时的原因见下；现已恢复 **DSDS 双卡**：
 
-| 层 | 改动 | 原因 |
+| 层 | 原单卡做法 | 现双卡做法 |
 |---|---|---|
-| `libril`（C，最底层） | `SIM_COUNT := 1` | `=2` 时编入 `-DANDROID_SIM_COUNT_2`，rild 会去连 `rild2`，没有该 socket 就每 4 秒崩溃 |
-| init | `persist.radio.multisim.config=none`、`ro.multisim.simslotcount=1` | 绕开 `init_msm8916.cpp` 的 `dsds_properties()` |
-| framework | `system_prop.mk` 补 `multisim.config=none` | vendor / blob 里的默认值会盖掉 system 的，需显式覆盖 |
+| `libril` | `SIM_COUNT := 1` | **`SIM_COUNT := 2`**（编 `-DANDROID_SIM_COUNT_2`，rild 连 `rild2`） |
+| init | `multisim.config=none`、`simslotcount=1` | **保持 `dsds_properties()`**（dsds + simslotcount=2） |
+| framework | `SubscriptionInfoUpdater` 容忍空卡槽 | **打补丁**：把 `NOT_READY` 视同 `ABSENT`，避免 `isAllIccIdQueryDone()` 永远等不到第二个 ICCID |
+| RIL 服务 | 删掉了 `ril-daemon1` | **改名 `ril-daemon2`**（匹配 `init.class_main.sh` 的 `start ril-daemon2`），加载 **`libsec-ril-dsds.so`** |
 
-其中两个坑值得记录：
+**为什么当初被迫单卡**（两个坑，值得记录）：
 
-- **`dsds` 是 init 在 `/data` 挂载前就 `property_set` 的**，只存在内存不落盘。
-  所以 `rm /data/property/persist.radio.multisim.config` 后重启仍然是 `dsds`，
-  必须改 `init_msm8916.cpp` 或运行期 `setprop`（会触发 `stop ril-daemon; start ril-daemon`）。
-- 属性保持 `dsds` 时，`SubscriptionInfoUpdater.isAllIccIdQueryDone()` 会一直等
-  卡槽 1 的 ICCID，而空卡槽只报 `NOT_READY`（不是 `ABSENT`），于是 `siminfo` 永远为空，
-  设置里显示无 SIM；同时 `PhoneFactory` 建两个 Phone 对象，导致两个 IMEI 相同。
+- `sec-ril` 对空卡槽只报 `NOT_READY`（不是 `ABSENT`），于是
+  `SubscriptionInfoUpdater.isAllIccIdQueryDone()` 一直等第二个 ICCID → `siminfo`
+  永不写入 → 设置里显示无 SIM；同时 `PhoneFactory` 建两个 Phone 对象 → **IMEI 重复**。
+  **现在改为在 framework 侧容忍 `NOT_READY`**，不再牺牲双卡。
+- 原厂 `init.qcom.rc` 的双卡服务叫 `ril-daemon1`，而 `class_main.sh` 要 `start ril-daemon2`
+  —— **名字对不上**，进程根本起不来。**改名对齐**后才真正打通。
+
+> 验收标准：两个卡槽**各插一次 SIM 都能识别**（不要求双卡同时在线）。
 
 ## 已知问题
 
-- **通话不可用**：国行 2G/3G 退网后，SM-G6000 不支持 VoLTE，插卡只能上网不能打电话
-  （VoLTE 待办，见下方「未完成 / 以后做」）
-- **14.1 仅单卡**：`SIM_COUNT=1`，只服务 SIM0，卡槽 2 在软件栈里不存在（原因见上节）
+- **VoLTE 未通**：移动 4G 下打电话走 CSFB 回落 2G/3G（能打通，但不是 VoLTE）。移植进行中（见上节）
+- **双卡修复在 CI 迭代中**：补丁已全部就位，正在解决编译问题（`ril-daemon2`/`dsds`/framework 容忍空卡槽）
 - **短信可能显示发送失败**：实际已送达但框架判定失败，`RIL_FIX_SMS_NOT_SENT_ERR` 在 7.1 无效
 - **RAM 1.5 GB / 2.0 GB 两个版本**：8.1 上多任务容易杀后台，7.1.2 明显更轻
 - **相机**：部分场景（HDR、闪光灯）可能异常，取决于 blobs 版本
@@ -130,32 +132,25 @@ artifact 需要登录 GitHub 才能下载，90 天后过期，长期保存请自
 
 以下事项**尚未完成**，留作后续方向，任何感兴趣的人可以按这里的结论接着做。
 
-### 1. VoLTE（状态：未完成，待攻克）
+### 1. VoLTE（状态：**移植进行中**，方案见 `docs/volte-port-steps.md`）
 
-已查清的事实：
+**已查清的事实（2026-11 更新）：**
 
 | 层 | 现状 |
 |---|---|
-| modem 固件 | **支持**：`modem.vfat.win` 内含 `ims_qmi_registration_apps_service.c`、`ims_qmi_settings_service.c`、`ims_qmi_presence_service.c`、`ims_task.cpp` 等，说明高通 QMI IMS 协议栈完整 |
-| vendor blobs（AP 侧） | **缺失**：只有通用的 `libqmi.so` / `libqmi_cci.so` / `libqmiservices.so`，扫描全部 2391 个文件、1806 个 `.so`，**不存在** `libqti-ims.so`、`libimsqmi*.so`、`libsecims*.so`，也没有 IMS APK |
-| framework | **缺失**：7.1 没有 `ImsService`；三星的 SecIMS 与 TouchWiz 私有接口深度耦合，无法单独搬出 |
-| carrier config | **缺失**：AOSP 的 `CarrierConfig` 无 CMCC 的 VoLTE 参数集与 `ims` APN |
+| **modem** | **支持**：实测 `ril.ims.ltevoicesupport=1`、RILD 上报 `VoPS=1`（硬件/固件都 OK） |
+| **移动配置** | 原厂 modem 只有 CSFB；但高通官方 carrier 配置 **`china/cmcc/csfb/dsds/volte_co/mcfg_sw.mbn`**（标识 `CMCC_C_DS_VC`）现成可用 |
+| **AP 侧 IMS** | 原厂 5.1.1 有组件（`imscmservice` + `lib-ims*.so` + jars），但缺 `imsservice.apk`；**Android 7.1 完全没有 `android.telephony.ims.*`**（该包是 9.0 引入的新 IMS 架构） |
+| **可用 apk** | `com.sec.imsservice` 找到**骁龙版**（SM8250），依赖的 `ims-common`/`imsmanager`/`telephony-common`/`rcsopenapi` **原厂固件全有** |
 
-整条链路：
+**关键结论**：障碍不在 modem，而在 **7.1 缺整套 Android 9 IMS 框架**。项目路线见
+[`docs/volte-port-steps.md`](docs/volte-port-steps.md)（20 步：补框架 → 适配 apk → 注入 modem 配置）。
 
-```
-应用 → IMS 框架(✘) → libqti-ims.so(✘) → libqmi_cci(✔) → QMI IMS 服务(✔) → modem IMS 栈(✔)
-```
+当前进度：**阶段 B（把 Android 9 的 `android.telephony.ims.*` 移植进 7.1）**，CI 迭代中。
 
-后续可尝试的方向（按可行性排序）：
+> 另一条备选路线：直接在 **15.1（8.1）** 上做（8.1 已有 `ImsService` 框架），上层障碍少很多。
 
-1. 从同代 **msm8916 且带高通 IMS** 的机型（如 Jio 定制机 LYF / YU 系列）提取 `libqti-ims.so` 及其 QMI 依赖，验证 ABI 与 QMI 服务版本是否匹配本机 modem。
-2. 在 7.1 上实现一个最小的 IMS 客户端（SIP 注册 + QMI IMS 请求），直接走 `libqmi_cci`，绕过框架层；工作量巨大，但技术上不依赖专有库。
-3. 放弃 7.1，直接在 **15.1（8.1）** 上做：8.1 已有 `ImsService` 框架与 `qti-telephony-common`，缺的仍是 `libqti-ims.so`，但上层障碍少很多。
-4. 补齐 CMCC 的 IMS APN 与 carrier config（前三条通了之后才有意义）。
-
-搜索结论：GitHub 上**没有任何** SM-G6000 / Galaxy On7 / 三星 msm8916 的 VoLTE 移植成果；
-同类成果（LYF、YU）全部基于高通 QMI IMS + Android 9/10，不能直接套用。
+搜索结论：GitHub 上**没有** SM-G6000 / Galaxy On7 的 VoLTE 移植成果；本项目是第一次尝试。
 
 ### 2. 短信发送状态误报（状态：未完成）
 
