@@ -489,10 +489,13 @@ jobs:
           # "refusing to generate code from aidl file defining parcelable"），
           # 移到独立目录并通过 LOCAL_AIDL_INCLUDES 提供给 interface aidl import。
           P=frameworks/opt/telephony/aidl
-          mkdir -p "$P"
+          mkdir -p "$P/android/telephony/ims"
           for a in $(find "$D/android/telephony/ims" -name "*.aidl"); do
             if grep -q "parcelable" "$a" && ! grep -q "interface" "$a"; then
-              cp "$a" "$P/"
+              # 必须保持包路径（aidl 按 -I 目录 + 包路径找类型）：
+              # aidl/android/telephony/ims/Xxx.aidl
+              rel=${a#$D/android/telephony/ims/}
+              cp "$a" "$P/android/telephony/ims/$rel"
               rm -f "$a"
             fi
           done
