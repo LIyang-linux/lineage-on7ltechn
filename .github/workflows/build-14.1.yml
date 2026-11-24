@@ -477,9 +477,11 @@ jobs:
           ls "$GITHUB_WORKSPACE/repo-src/ims-compat" | head -3
           test -d "$S" || { echo "FAIL: $S 不存在"; exit 1; }
           D=frameworks/opt/telephony/src/java
-          mkdir -p "$D"
-          cp -r "$S/android/telephony/ims" "$D/"
-          cp -r "$S/com/android/ims"    "$D/"
+          mkdir -p "$D/android/telephony" "$D/com/android"
+          # 注意：cp -r SRC DIR/ 会把目录本身改名为 DIR/<basename>，
+          # 必须指到父目录，才能让包路径保持 android/telephony/ims 与 com/android/ims。
+          cp -r "$S/android/telephony/ims" "$D/android/telephony/"
+          cp -r "$S/com/android/ims"     "$D/com/android/"
           # Android 7.1 的 aidl 拒绝生成 parcelable（8.0+ 才支持），
           # 而 9.0 的数据类 .java 已自带 Parcelable 实现 → 删除这些 .aidl。
           for a in $(find "$D/android/telephony/ims" -name "*.aidl"); do
