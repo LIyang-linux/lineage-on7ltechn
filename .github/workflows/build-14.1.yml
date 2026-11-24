@@ -562,53 +562,9 @@ jobs:
           mkdir -p "$D"
           cp "$S/android/annotation/CallbackExecutor.java" "$D/"
           ls -l "$D/CallbackExecutor.java"
-          # Android 9 的 @IntDef 有 prefix() 成员，7.1 没有 → 补上（默认空数组，向后兼容）
-          python3 - frameworks/base/core/java/android/annotation/IntDef.java <<'PYEOF'
-          import sys,re
-          p=sys.argv[1]; t=open(p).read()
-          if 'prefix()' not in t:
-              m=re.search(r'(\n\s*long\[\]\s+value\(\)[^;]*;\n)')
-              ins='\n    /**\n     * @hide\n     */\n    String[] prefix() default {};\n'
-              if m:
-                  t=t[:m.end(1)]+ins+t[m.end(1):]
-                  open(p,'w',encoding='utf-8',newline='\n').write(t)
-                  print('patched IntDef.prefix()')
-              else:
-                  print('WARN: 未找到 value() 锚点')
-          else:
-              print('IntDef 已有 prefix()')
-          PYEOF
-          # RemoteCallbackList.broadcast(Consumer) 是 Android 9 加的，7.1 没有
-          python3 - frameworks/base/core/java/android/os/RemoteCallbackList.java <<'PYEOF'
-          import sys
-          p=sys.argv[1]; t=open(p).read()
-          if 'void broadcast(' in t:
-              print('已有 broadcast()')
-          else:
-              i=t.rstrip().rfind('}')
-              m='''
-    /**
-     * Broadcast an action to all registered callbacks (Android 9 API).
-     * @hide
-     */
-    public void broadcast(java.util.function.Consumer<T> action) {
-        int N = beginBroadcast();
-        try {
-            for (int i = 0; i < N; i++) {
-                try {
-                    action.accept(getBroadcastItem(i));
-                } catch (Exception e) {
-                    // ignore callback failure
-                }
-            }
-        } finally {
-            finishBroadcast();
-        }
-    }
-'''
-              open(p,'w',encoding='utf-8',newline='\n').write(t[:i]+m+t[i:])
-              print('patched RemoteCallbackList.broadcast()')
-          PYEOF
+          # Android 9 才有的框架 API（@IntDef.prefix / RemoteCallbackList.broadcast），
+          # 补丁脚本放在仓库里，避免在 YAML 块标量里嵌入低缩进的 Java 片段。
+          python3 "$GITHUB_WORKSPACE/repo-src/ims-compat/patches/apply.py" frameworks/base
 
       - name: 7. 编译
         timeout-minutes: 240
