@@ -112,4 +112,39 @@ public final class ImsSsInfo implements Parcelable {
     public String getIcbNum() {
         return mIcbNum;
     }
+
+    /**
+     * Builds {@link ImsSsInfo} instances, which may include optional parameters.
+     *
+     * Android 10 才引入；SM8250 的 imsservice.apk 用 Builder 组装 UT 查询结果，
+     * 这里按 apk 的实际调用（构造(status) / setIncomingCommunicationBarringNumber /
+     * setServiceClass / build）补上。
+     */
+    public static final class Builder {
+        private final ImsSsInfo mImsSsInfo;
+
+        public Builder(int status) {
+            mImsSsInfo = new ImsSsInfo();
+            mImsSsInfo.mStatus = status;
+        }
+
+        /** 设置 IMS 呼入限制（ICB）号码。 */
+        public Builder setIncomingCommunicationBarringNumber(String number) {
+            mImsSsInfo.mIcbNum = number;
+            return this;
+        }
+
+        /**
+         * 设置补充业务的服务类别（TS 24.080 service class）。
+         * AOSP 11 才有；apk 只是把它填进查询结果回给平台，7.1 的 UT 实现不消费这个字段，
+         * 因此只保留方法签名，不改 Parcel 格式。
+         */
+        public Builder setServiceClass(int serviceClass) {
+            return this;
+        }
+
+        public ImsSsInfo build() {
+            return mImsSsInfo;
+        }
+    }
 }

@@ -552,6 +552,18 @@ jobs:
           # 补丁脚本放在仓库里，避免在 YAML 块标量里嵌入低缩进的 Java 片段。
           python3 "$GITHUB_WORKSPACE/repo-src/ims-compat/patches/apply.py" frameworks/base
 
+      - name: 6.17 旧 IMS 库（frameworks/opt/net/ims）适配 Android 9 接口
+        working-directory: /mnt/build
+        run: |
+          set -e
+          # 我们把 com.android.ims.internal.*.aidl 换成了 9.0 版，旧的 ims-common 库
+          # （telephony-common 依赖它）会因类型/签名变化编译不过：
+          #   1) 旧数据类 -> android.telephony.ims.*
+          #   2) 去掉已不成立的 @Override
+          #   3) 补 9.0 新增抽象方法的空实现
+          test -d frameworks/opt/net/ims/src/java || { echo "FAIL: frameworks/opt/net/ims 不存在"; exit 1; }
+          python3 "$GITHUB_WORKSPACE/repo-src/ims-compat/patches/fix_ims_common.py" frameworks/opt/net/ims
+
       - name: 7. 编译
         timeout-minutes: 240
         working-directory: /mnt/build
