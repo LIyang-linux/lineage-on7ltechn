@@ -489,12 +489,12 @@ jobs:
           # "refusing to generate code from aidl file defining parcelable"），
           # 移到独立目录并通过 LOCAL_AIDL_INCLUDES 提供给 interface aidl import。
           P=frameworks/opt/telephony/aidl
-          mkdir -p "$P/android/telephony/ims"
+          mkdir -p "$P"
           for a in $(find "$D/android/telephony/ims" -name "*.aidl"); do
             if grep -q "parcelable" "$a" && ! grep -q "interface" "$a"; then
-              # 必须保持包路径（aidl 按 -I 目录 + 包路径找类型）：
-              # aidl/android/telephony/ims/Xxx.aidl
+              # 保持包路径，且自动创建 feature/ stub/ 等子目录
               rel=${a#$D/android/telephony/ims/}
+              mkdir -p "$P/android/telephony/ims/$(dirname "$rel")"
               cp "$a" "$P/android/telephony/ims/$rel"
               rm -f "$a"
             fi
@@ -512,6 +512,10 @@ jobs:
           PYEOF
           echo "ims 编译文件数: $(find "$D/android/telephony/ims" -type f | wc -l)"
           echo "aidl 类型目录: $(find "$P" -type f | wc -l)"
+          echo "--- 类型目录内容 ---"
+          find "$P" -type f
+          echo "--- 校验 ImsStreamMediaProfile ---"
+          ls -l "$P/android/telephony/ims/ImsStreamMediaProfile.aidl" || echo "缺失!"
 
       - name: 6.16 补 CallbackExecutor 注解（core/java）
         working-directory: /mnt/build
