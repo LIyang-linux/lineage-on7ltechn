@@ -470,30 +470,17 @@ jobs:
           # SM8250 的 imsservice.apk 需要 Android 9 引入的 android.telephony.ims.*；
           # LineageOS cm-14.1（7.1）只有 com.android.ims.internal.*（旧接口）。
           #
-          # 放到 frameworks/base/telephony/java：base/Android.mk 用
-          # find-other-java-files(FRAMEWORKS_BASE_SUBDIRS) 自动收集该目录，
-          # 且 base 的旧 IMS aidl（com/android/ims/internal/*）编译时也需要能 import 新类型，
-          # 两者同属 framework 模块才不会出现循环依赖。
+          # 放进 frameworks/base/telephony/java：base/Android.mk 用
+          # find-other-java-files（= all-java-files-under，只收 .java）收集源文件，
+          # 因此同目录下的 parcelable *.aidl 不会被当编译目标（7.1 aidl 拒绝生成 parcelable），
+          # 而 base 的 aidl 编译已带 -Iframeworks/base/telephony/java，正好用来做 import 解析。
           S="$GITHUB_WORKSPACE/repo-src/ims-compat/src"
           test -d "$S" || { echo "FAIL: $S 不存在"; exit 1; }
           D=frameworks/base/telephony/java
           mkdir -p "$D/android/telephony"
           cp -r "$S/android/telephony/ims" "$D/android/telephony/"
-          # parcelable 型 aidl 在 7.1 不能作为编译目标（aidl 拒绝生成代码），
-          # 只用于给 interface 型 aidl 做 import 解析 → 移到独立 include 目录。
-          P=frameworks/base/telephony/aidl
-          mkdir -p "$P"
-          for a in $(find "$D/android/telephony/ims" -name "*.aidl"); do
-            if grep -q "parcelable" "$a" && ! grep -q "interface" "$a"; then
-              rel=${a#$D/android/telephony/ims/}
-              mkdir -p "$P/android/telephony/ims/$(dirname "$rel")"
-              cp "$a" "$P/android/telephony/ims/$rel"
-              rm -f "$a"
-            fi
-          done
-          echo "java/aidl 就位:"
-          echo "  编译源 $(find "$D/android/telephony/ims" -type f | wc -l) 个"
-          echo "  类型定义 $(find "$P" -type f | wc -l) 个"
+          echo "就位文件数: $(find "$D/android/telephony/ims" -type f | wc -l)"
+          echo "其中 aidl: $(find "$D/android/telephony/ims" -name '*.aidl' | wc -l)"
 
       - name: 6.16b 旧 IMS aidl 升级为 Android 9 版（新类型签名）
         working-directory: /mnt/build
@@ -543,19 +530,6 @@ jobs:
               for x in new: print('   ',x)
           else:
               print('aidl 无需新增')
-          # 3) parcelable aidl 的类型解析目录加入 include
-          if 'telephony/aidl' not in t:
-              t=t.replace(anchor, anchor, 1)
-              # LOCAL_AIDL_INCLUDES 段
-              marker='LOCAL_AIDL_INCLUDES +=\n'
-              ins='LOCAL_AIDL_INCLUDES += $(LOCAL_PATH)/telephony/aidl\n'
-              if marker in t:
-                  t=t.replace(marker, ins+marker, 1)
-                  print('已加 LOCAL_AIDL_INCLUDES(telephony/aidl)')
-              else:
-                  m2='LOCAL_AIDL_INCLUDES +=' 
-                  i=t.find(m2)
-                  print('WARN: 未找到 LOCAL_AIDL_INCLUDES 段' if i<0 else 'skip')
           open(mk,'w',encoding='utf-8',newline='\n').write(t)
           PYEOF
 
