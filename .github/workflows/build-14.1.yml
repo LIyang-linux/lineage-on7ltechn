@@ -578,6 +578,37 @@ jobs:
           else:
               print('IntDef 已有 prefix()')
           PYEOF
+          # RemoteCallbackList.broadcast(Consumer) 是 Android 9 加的，7.1 没有
+          python3 - frameworks/base/core/java/android/os/RemoteCallbackList.java <<'PYEOF'
+          import sys
+          p=sys.argv[1]; t=open(p).read()
+          if 'void broadcast(' in t:
+              print('已有 broadcast()')
+          else:
+              i=t.rstrip().rfind('}')
+              m='''
+    /**
+     * Broadcast an action to all registered callbacks (Android 9 API).
+     * @hide
+     */
+    public void broadcast(java.util.function.Consumer<T> action) {
+        int N = beginBroadcast();
+        try {
+            for (int i = 0; i < N; i++) {
+                try {
+                    action.accept(getBroadcastItem(i));
+                } catch (Exception e) {
+                    // ignore callback failure
+                }
+            }
+        } finally {
+            finishBroadcast();
+        }
+    }
+'''
+              open(p,'w',encoding='utf-8',newline='\n').write(t[:i]+m+t[i:])
+              print('patched RemoteCallbackList.broadcast()')
+          PYEOF
 
       - name: 7. 编译
         timeout-minutes: 240
