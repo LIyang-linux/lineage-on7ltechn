@@ -186,7 +186,33 @@ GPL-2.0 在法务上是安全的，只是会让下游无法只用 Apache-2.0 的
 
 ## 致谢
 
-- [Galaxy-MSM8916](https://github.com/Galaxy-MSM8916) — msm8916 全套设备树、vendor、内核
-- [LineageOS](https://github.com/LineageOS) — 系统源码
-- [creeperxyz86/releases_o7prolte](https://github.com/creeperxyz86/releases_o7prolte) — 国际版 17.1 移植，本项目的起点
-- 以及当年花 29 块把它从闲鱼捞出来的自己
+### 系统与设备
+
+| 项目 | 用途 |
+|---|---|
+| [Galaxy-MSM8916](https://github.com/Galaxy-MSM8916) | msm8916 全套设备树、vendor blobs、内核（本项目的硬件基础） |
+| [LineageOS](https://github.com/LineageOS) | 系统源码（14.1 / 15.1） |
+| [creeperxyz86/releases_o7prolte](https://github.com/creeperxyz86/releases_o7prolte) | 国际版 17.1 移植，本项目的起点 |
+| [AOSP](https://android.googlesource.com/platform/frameworks/base/) | `android.telephony.ims.*` 等框架源码（VoLTE 阶段移植来源） |
+
+### VoLTE / IMS（本项目参考的关键成果）
+
+| 项目 | 用途 |
+|---|---|
+| [akbar-npj/msm8916-openwrt](https://github.com/akbar-npj/msm8916-openwrt) | **中国移动 VoLTE modem 配置**（`qcom-carrier-autocfg` 的 `cmcc/.../volte_co`）+ msm8916 VoLTE 启用 SOP |
+| [SolidEva/sm8250-samsung-imsservice-apk](https://github.com/SolidEva/sm8250-samsung-imsservice-apk) | **骁龙版三星 IMS apk**（`com.sec.imsservice`，含 smali/res），VoLTE 的服务端 |
+| [WeWaffles/OneLineage](https://github.com/WeWaffles/OneLineage) | **在 AOSP/LineageOS 上运行三星 IMS 的完整方法**与补丁工具（`docs/SAMSUNG_IMS.md`） |
+| [fahadalijaved/OneOS](https://github.com/fahadalijaved/OneOS) | 上述补丁的源头（Apache-2.0），桩实现思路 |
+| [jameskdev/android_samsung_imsservice](https://github.com/jameskdev/android_samsung_imsservice) | 三星 IMS 适配 AOSP compat 接口的参考 |
+| [xyls985/msm8916-volte-sms](https://github.com/xyls985/msm8916-volte-sms) | msm8916 平台 IMS（SMS over IMS）协议实现参考，验证了 modem 侧可行 |
+
+### 同一台机器的其他项目
+
+| 项目 | 用途 |
+|---|---|
+| [pmos-on7ltechn](https://github.com/LIyang-linux/pmos-on7ltechn) | 同机型的 postmarketOS 移植（触摸/显示/GPU/充电等硬件逆向成果） |
+
+### 其他
+
+- XDA / 社区里所有 8916 机型的 VoLTE 讨论（超频体质、IMS 行为）
+- 以及当年花 29 块把它从闲鱼捞出来的自己 🫡
