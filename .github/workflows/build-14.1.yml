@@ -483,15 +483,32 @@ jobs:
           # 必须指到父目录，才能让包路径保持 android/telephony/ims 与 com/android/ims。
           cp -r "$S/android/telephony/ims" "$D/android/telephony/"
           cp -r "$S/com/android/ims"     "$D/com/android/"
-          # Android 7.1 的 aidl 拒绝生成 parcelable（8.0+ 才支持），
-          # 而 9.0 的数据类 .java 已自带 Parcelable 实现 → 删除这些 .aidl。
+          # Android 7.1 的 aidl 只对“interface”型 aidl 生成代码；
+          # parcelable 型 aidl 只做类型解析（如 7.1 的 ServiceState.aidl 就在 aidl_files 而非 LOCAL_SRC_FILES）。
+          # 所以 parcelable aidl 不能留在 src/java（会被 all-Iaidl-files-under 当编译目标 →
+          # "refusing to generate code from aidl file defining parcelable"），
+          # 移到独立目录并通过 LOCAL_AIDL_INCLUDES 提供给 interface aidl import。
+          P=frameworks/opt/telephony/aidl
+          mkdir -p "$P"
           for a in $(find "$D/android/telephony/ims" -name "*.aidl"); do
             if grep -q "parcelable" "$a" && ! grep -q "interface" "$a"; then
-              echo "移除 parcelable aidl: ${a#$D/}"
+              cp "$a" "$P/"
               rm -f "$a"
             fi
           done
-          echo "注入完成（ims 文件数）: $(find "$D/android/telephony/ims" -type f | wc -l)"
+          # 让该目录参与 aidl include（与 LOCAL_PATH/src/java 同级）
+          python3 - frameworks/opt/telephony/Android.mk <<'PYEOF'
+          import sys
+          p=sys.argv[1]; t=open(p).read()
+          old='LOCAL_AIDL_INCLUDES := $(LOCAL_PATH)/src/java\n'
+          new='LOCAL_AIDL_INCLUDES := $(LOCAL_PATH)/src/java $(LOCAL_PATH)/aidl\n'
+          if old in t and '$(LOCAL_PATH)/aidl' not in t:
+              t=t.replace(old,new,1); open(p,'w').write(t); print('patched LOCAL_AIDL_INCLUDES')
+          else:
+              print('skip (already or anchor missing)')
+          PYEOF
+          echo "ims 编译文件数: $(find "$D/android/telephony/ims" -type f | wc -l)"
+          echo "aidl 类型目录: $(find "$P" -type f | wc -l)"
 
       - name: 6.16 补 CallbackExecutor 注解（core/java）
         working-directory: /mnt/build
