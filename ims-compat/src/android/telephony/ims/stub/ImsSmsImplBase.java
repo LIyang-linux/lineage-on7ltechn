@@ -19,8 +19,6 @@ package android.telephony.ims.stub;
 import android.annotation.IntDef;
 import android.annotation.SystemApi;
 import android.os.RemoteException;
-import android.telephony.SmsManager;
-import android.telephony.SmsMessage;
 import android.telephony.ims.aidl.IImsSmsListener;
 import android.util.Log;
 
@@ -38,6 +36,15 @@ import java.lang.annotation.RetentionPolicy;
 @SystemApi
 public class ImsSmsImplBase {
     private static final String LOG_TAG = "SmsImplBase";
+
+    // 7.1 的 android.telephony.SmsManager / SmsMessage 在 telephony-common 模块，
+    // framework 模块编译时看不到（否则会循环依赖），所以这里自带等价常量。
+    /** @hide */
+    public static final int RESULT_ERROR_GENERIC_FAILURE = 1;
+    /** @hide */
+    public static final String FORMAT_3GPP = "3gpp";
+    /** @hide */
+    public static final String FORMAT_3GPP2 = "3gpp2";
 
     /** @hide */
     @IntDef({
@@ -154,7 +161,7 @@ public class ImsSmsImplBase {
         // Base implementation returns error. Should be overridden.
         try {
             onSendSmsResult(token, messageRef, SEND_STATUS_ERROR,
-                    SmsManager.RESULT_ERROR_GENERIC_FAILURE);
+                    RESULT_ERROR_GENERIC_FAILURE);
         } catch (RuntimeException e) {
             Log.e(LOG_TAG, "Can not send sms: " + e.getMessage());
         }
@@ -216,14 +223,11 @@ public class ImsSmsImplBase {
                 mListener.onSmsReceived(token, format, pdu);
             } catch (RemoteException e) {
                 Log.e(LOG_TAG, "Can not deliver sms: " + e.getMessage());
-                SmsMessage message = SmsMessage.createFromPdu(pdu, format);
-                if (message != null && message.mWrappedSmsMessage != null) {
-                    acknowledgeSms(token, message.mWrappedSmsMessage.mMessageRef,
-                            DELIVER_STATUS_ERROR_GENERIC);
-                } else {
-                    Log.w(LOG_TAG, "onSmsReceived: Invalid pdu entered.");
-                    acknowledgeSms(token, 0, DELIVER_STATUS_ERROR_GENERIC);
-                }
+                // 9.0 原版用 android.telephony.SmsMessage.createFromPdu() 取 TP-MR，
+                // 该类在 7.1 属于 telephony-common，framework 模块无法引用；
+                // 这里退化为上报通用失败（与原实现的 "Invalid pdu" 分支一致）。
+                Log.w(LOG_TAG, "onSmsReceived: can not deliver sms, report generic failure");
+                acknowledgeSms(token, 0, DELIVER_STATUS_ERROR_GENERIC);
             }
         }
     }
@@ -317,7 +321,7 @@ public class ImsSmsImplBase {
      * {@link SmsMessage#FORMAT_3GPP2}.
      */
     public String getSmsFormat() {
-      return SmsMessage.FORMAT_3GPP;
+      return FORMAT_3GPP;
     }
 
     /**

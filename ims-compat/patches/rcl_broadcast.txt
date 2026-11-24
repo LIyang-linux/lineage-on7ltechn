@@ -2,7 +2,7 @@
      * Broadcast an action to all registered callbacks (Android 9 API).
      * @hide
      */
-    public void broadcast(java.util.function.Consumer<T> action) {
+    public void broadcast(java.util.function.Consumer<E> action) {
         int N = beginBroadcast();
         try {
             for (int i = 0; i < N; i++) {

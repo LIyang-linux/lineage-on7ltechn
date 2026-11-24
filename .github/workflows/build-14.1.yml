@@ -496,6 +496,12 @@ jobs:
           cp -r "$S/." "$OLD/"
           echo "覆盖后 old aidl: $(ls "$OLD"/*.aidl | wc -l) 个"
           ls "$OLD"
+          # ImsConfigImplBase 引用 com.android.ims.ImsConfig（9.0 才有，7.1 的 com/android/ims 下只有数据类）
+          S2="$GITHUB_WORKSPACE/repo-src/ims-compat/src/com/android/ims"
+          NEW=frameworks/base/telephony/java/com/android/ims
+          mkdir -p "$NEW"
+          cp "$S2"/*.java "$NEW/"
+          echo "com.android.ims 新增: $(ls "$NEW"/*.java | xargs -n1 basename | tr '\n' ' ')"
 
       - name: 6.16c 注册新 IMS aidl 并补 include 路径
         working-directory: /mnt/build
