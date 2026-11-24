@@ -487,6 +487,41 @@ jobs:
           echo "  com/android/ims: $(find frameworks/base/telephony/java/com/android/ims -type f | wc -l) 文件"
           ls frameworks/base/core/java/android/annotation/CallbackExecutor.java
 
+      - name: 6.16 把新 AIDL 注册进 frameworks/base/Android.mk
+        working-directory: /mnt/build
+        run: |
+          set -e
+          MK=frameworks/base/Android.mk
+          # 7.1 的 framework 模块只编译 LOCAL_SRC_FILES 里显式列出的 .aidl，
+          # 不注册就报 "package android.telephony.ims.aidl does not exist"。
+          # 在 IMS 相关 aidl 段的末尾（ISmsSecurityAgent.aidl 之后）插入新 aidl。
+          python3 - "$MK" <<'PYEOF'
+          import sys, os, glob
+          mk = sys.argv[1]
+          t = open(mk, encoding='utf-8').read()
+          base = 'frameworks/base/'
+          paths = []
+          for pat in ['telephony/java/android/telephony/ims/**/*.aidl',
+                      'telephony/java/com/android/ims/**/*.aidl']:
+              for p in sorted(glob.glob(base + pat, recursive=True)):
+                  rel = p[len(base):]
+                  if rel.endswith('ImsConfigListener.aidl'):
+                      continue  # 7.1 已注册
+                  paths.append(rel)
+          block = ''.join('\t%s \\\n' % p for p in paths)
+          anchor = '\ttelephony/java/com/android/internal/telephony/ISmsSecurityAgent.aidl \\\n'
+          if anchor not in t:
+              print('FAIL: 找不到锚点'); sys.exit(1)
+          if paths[0] in t:
+              print('已注册过，跳过'); sys.exit(0)
+          t = t.replace(anchor, anchor + block, 1)
+          open(mk, 'w', encoding='utf-8', newline='\n').write(t)
+          print('注册 %d 个 aidl:' % len(paths))
+          for p in paths:
+              print('   ', p)
+          PYEOF
+          grep -c "\.aidl" "$MK"
+
       - name: 7. 编译
         timeout-minutes: 240
         working-directory: /mnt/build
