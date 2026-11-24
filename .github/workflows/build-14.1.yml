@@ -482,7 +482,6 @@ jobs:
           # 注意：cp -r SRC DIR/ 会把目录本身改名为 DIR/<basename>，
           # 必须指到父目录，才能让包路径保持 android/telephony/ims 与 com/android/ims。
           cp -r "$S/android/telephony/ims" "$D/android/telephony/"
-          cp -r "$S/com/android/ims"     "$D/com/android/"
           # Android 7.1 的 aidl 只对“interface”型 aidl 生成代码；
           # parcelable 型 aidl 只做类型解析（如 7.1 的 ServiceState.aidl 就在 aidl_files 而非 LOCAL_SRC_FILES）。
           # 所以 parcelable aidl 不能留在 src/java（会被 all-Iaidl-files-under 当编译目标 →
@@ -512,10 +511,47 @@ jobs:
           PYEOF
           echo "ims 编译文件数: $(find "$D/android/telephony/ims" -type f | wc -l)"
           echo "aidl 类型目录: $(find "$P" -type f | wc -l)"
-          echo "--- 类型目录内容 ---"
-          find "$P" -type f
-          echo "--- 校验 ImsStreamMediaProfile ---"
-          ls -l "$P/android/telephony/ims/ImsStreamMediaProfile.aidl" || echo "缺失!"
+
+      - name: 6.16b 旧 IMS aidl 升级为 Android 9 版（新类型签名）
+        working-directory: /mnt/build
+        run: |
+          set -e
+          # 三星 apk 按 Android 9/10 的签名调用 com.android.ims.internal.*，
+          # 例如 registrationDisconnected(Landroid/telephony/ims/ImsReasonInfo;)、
+          # utConfigurationCallBarringQueried(..., [Landroid/telephony/ims/ImsSsInfo;)。
+          # 7.1 的同名接口用的是旧类型 → 必须整体替换为 9.0 版本。
+          S="$GITHUB_WORKSPACE/repo-src/ims-compat/src/com/android/ims/internal"
+          OLD=frameworks/base/telephony/java/com/android/ims/internal
+          mkdir -p "$OLD"
+          cp -r "$S/." "$OLD/"
+          echo "覆盖后 old aidl: $(ls "$OLD"/*.aidl | wc -l) 个"
+          ls "$OLD"
+
+      - name: 6.16c 注册新增的旧 aidl 到 frameworks/base/Android.mk
+        working-directory: /mnt/build
+        run: |
+          set -e
+          MK=frameworks/base/Android.mk
+          python3 - "$MK" <<'PYEOF'
+          import sys, os, glob
+          mk=sys.argv[1]; t=open(mk).read()
+          base='frameworks/base/'
+          d=base+'telephony/java/com/android/ims/internal'
+          new=[]
+          for p in sorted(glob.glob(d+'/*.aidl')):
+              rel=p[len(base):]
+              if rel not in t:
+                  new.append(rel)
+          if not new:
+              print('无需新增'); sys.exit(0)
+          anchor='\ttelephony/java/com/android/internal/telephony/ISmsSecurityAgent.aidl \\\n'
+          if anchor not in t:
+              print('FAIL: 锚点缺失'); sys.exit(1)
+          block=''.join('\t%s \\\n'%x for x in new)
+          open(mk,'w',encoding='utf-8',newline='\n').write(t.replace(anchor, anchor+block, 1))
+          print('新增 %d 个:'%len(new))
+          for x in new: print('   ',x)
+          PYEOF
 
       - name: 6.16 补 CallbackExecutor 注解（core/java）
         working-directory: /mnt/build
@@ -526,6 +562,22 @@ jobs:
           mkdir -p "$D"
           cp "$S/android/annotation/CallbackExecutor.java" "$D/"
           ls -l "$D/CallbackExecutor.java"
+          # Android 9 的 @IntDef 有 prefix() 成员，7.1 没有 → 补上（默认空数组，向后兼容）
+          python3 - frameworks/base/core/java/android/annotation/IntDef.java <<'PYEOF'
+          import sys,re
+          p=sys.argv[1]; t=open(p).read()
+          if 'prefix()' not in t:
+              m=re.search(r'(\n\s*long\[\]\s+value\(\)[^;]*;\n)')
+              ins='\n    /**\n     * @hide\n     */\n    String[] prefix() default {};\n'
+              if m:
+                  t=t[:m.end(1)]+ins+t[m.end(1):]
+                  open(p,'w',encoding='utf-8',newline='\n').write(t)
+                  print('patched IntDef.prefix()')
+              else:
+                  print('WARN: 未找到 value() 锚点')
+          else:
+              print('IntDef 已有 prefix()')
+          PYEOF
 
       - name: 7. 编译
         timeout-minutes: 240
