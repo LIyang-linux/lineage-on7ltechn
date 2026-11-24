@@ -468,66 +468,37 @@ jobs:
           set -e
           # SM8250 的 imsservice.apk 需要 Android 9 引入的 android.telephony.ims.*；
           # LineageOS cm-14.1（7.1）只有 com.android.ims.internal.*（旧接口）。
-          # 把 AOSP 9.0 的整套 IMS 包放进 telephony/java（编译进 telephony-common.jar）。
+          #
+          # 放到 frameworks/opt/telephony/src/java/：该模块用 all-java-files-under/all-Iaidl-files-under
+          # 自动收集 src/java 下所有 .java/.aidl，无需改 Android.mk；且与 Phone/ImsPhoneConnection
+          # 同模块（framework 模块看不到它们）。
           S="$GITHUB_WORKSPACE/repo-src/ims-compat/src"
           echo "WORKSPACE=$GITHUB_WORKSPACE"
-          ls -la "$GITHUB_WORKSPACE/repo-src/ims-compat" 2>&1 | head -5
+          ls "$GITHUB_WORKSPACE/repo-src/ims-compat" | head -3
           test -d "$S" || { echo "FAIL: $S 不存在"; exit 1; }
-          # android.telephony.ims.* -> frameworks/base/telephony/java/
-          mkdir -p frameworks/base/telephony/java/android/telephony/ims
-          cp -r "$S/android/telephony/ims/." frameworks/base/telephony/java/android/telephony/ims/
-          # com.android.ims.* -> frameworks/base/telephony/java/
-          mkdir -p frameworks/base/telephony/java/com/android/ims/internal
-          cp -r "$S/com/android/ims/." frameworks/base/telephony/java/com/android/ims/
-          # android.annotation.CallbackExecutor -> frameworks/base/core/java/
-          mkdir -p frameworks/base/core/java/android/annotation
-          cp -r "$S/android/annotation/." frameworks/base/core/java/android/annotation/
-          echo "注入完成:"
-          echo "  telephony/ims: $(find frameworks/base/telephony/java/android/telephony/ims -type f | wc -l) 文件"
-          echo "  com/android/ims: $(find frameworks/base/telephony/java/com/android/ims -type f | wc -l) 文件"
-          ls frameworks/base/core/java/android/annotation/CallbackExecutor.java
+          D=frameworks/opt/telephony/src/java
+          mkdir -p "$D"
+          cp -r "$S/android/telephony/ims" "$D/"
+          cp -r "$S/com/android/ims"    "$D/"
+          # Android 7.1 的 aidl 拒绝生成 parcelable（8.0+ 才支持），
+          # 而 9.0 的数据类 .java 已自带 Parcelable 实现 → 删除这些 .aidl。
+          for a in $(find "$D/android/telephony/ims" -name "*.aidl"); do
+            if grep -q "parcelable" "$a" && ! grep -q "interface" "$a"; then
+              echo "移除 parcelable aidl: ${a#$D/}"
+              rm -f "$a"
+            fi
+          done
+          echo "注入完成（ims 文件数）: $(find "$D/android/telephony/ims" -type f | wc -l)"
 
-      - name: 6.16 把新 AIDL 注册进 frameworks/base/Android.mk
+      - name: 6.16 补 CallbackExecutor 注解（core/java）
         working-directory: /mnt/build
         run: |
           set -e
-          MK=frameworks/base/Android.mk
-          # 7.1 的 framework 模块只编译 LOCAL_SRC_FILES 里显式列出的 .aidl，
-          # 不注册就报 "package android.telephony.ims.aidl does not exist"。
-          # 在 IMS 相关 aidl 段的末尾（ISmsSecurityAgent.aidl 之后）插入新 aidl。
-          python3 - "$MK" <<'PYEOF'
-          import sys, os, glob
-          mk = sys.argv[1]
-          t = open(mk, encoding='utf-8').read()
-          base = 'frameworks/base/'
-          paths = []
-          skip = []
-          for pat in ['telephony/java/android/telephony/ims/**/*.aidl',
-                      'telephony/java/com/android/ims/**/*.aidl']:
-              for p in sorted(glob.glob(base + pat, recursive=True)):
-                  rel = p[len(base):]
-                  if rel.endswith('ImsConfigListener.aidl'):
-                      continue  # 7.1 已注册
-                  body = open(p, encoding='utf-8', errors='replace').read()
-                  # Android 7.1 的 aidl 拒绝生成 parcelable（8.0+ 才支持），
-                  # 而 9.0 的数据类 .java 已自带 Parcelable 实现，所以只注册 interface。
-                  if 'parcelable' in body and 'interface' not in body:
-                      skip.append(rel); continue
-                  paths.append(rel)
-          block = ''.join('\t%s \\\n' % p for p in paths)
-          anchor = '\ttelephony/java/com/android/internal/telephony/ISmsSecurityAgent.aidl \\\n'
-          if anchor not in t:
-              print('FAIL: 找不到锚点'); sys.exit(1)
-          if paths and paths[0] in t:
-              print('已注册过，跳过'); sys.exit(0)
-          t = t.replace(anchor, anchor + block, 1)
-          open(mk, 'w', encoding='utf-8', newline='\n').write(t)
-          print('注册 %d 个 interface aidl:' % len(paths))
-          for p in paths: print('   ', p)
-          print('跳过 %d 个 parcelable aidl（7.1 不支持）:' % len(skip))
-          for p in skip: print('   ', p)
-          PYEOF
-          grep -c "\.aidl" "$MK"
+          S="$GITHUB_WORKSPACE/repo-src/ims-compat/src"
+          D=frameworks/base/core/java/android/annotation
+          mkdir -p "$D"
+          cp "$S/android/annotation/CallbackExecutor.java" "$D/"
+          ls -l "$D/CallbackExecutor.java"
 
       - name: 7. 编译
         timeout-minutes: 240
