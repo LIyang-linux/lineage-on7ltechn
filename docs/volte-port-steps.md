@@ -94,12 +94,19 @@
 ## 进度
 
 - [x] 阶段 0：调研（modem 支持确认、组件清点、接口差异）
-- [ ] 阶段 A（1–5）
-- [ ] 阶段 B（6–12）
+- [x] 阶段 A：modem 侧已完成 —— 4 个 CMCC mcfg 替换为 `volte_co`（`CMCC_C_DS_VC`），
+      生成 `modem-volte/modem.vfat.win`（44.5MB，md5 `5e9970835f1cace0cdc417d9d278f07d`），
+      已刷入真机：可开机、可短信、4G 数据正常；纯 2G 无服务（当地 2G 已退网，属预期）。
+      `ril.ims.ltevoicesupport=1` / `ril.ims.ecsupport=2` 说明 modem 能力位已打开。
+- [ ] 阶段 A 剩余：回退包整理（原版 modem 备份在 `原厂备份/modem.vfat.win`）
+- [~] 阶段 B（6–12）：注入 `android.telephony.ims.*`（68 个文件，含数据类/aidl/stub），
+      7.1 缺失的 `IntDef.prefix()`、`RemoteCallbackList.broadcast()` 已本地打补丁。
+      当前卡在编译验证：`b0800a4` 因 parcelable aidl 被移出 include 目录而失败，
+      `cf47452` 已修正（parcelable aidl 留在 `telephony/java` 下，天然在 `-I` 路径内）。
 - [ ] 阶段 C（13–16）
 - [ ] 阶段 D（17–18）
 - [ ] 阶段 E（19–20）
 
 ---
 
-*最后更新：2026-11-23*
+*最后更新：2026-11-24*
