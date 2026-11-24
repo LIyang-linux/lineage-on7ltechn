@@ -464,13 +464,21 @@ jobs:
           # SM8250 的 imsservice.apk 需要 Android 9 引入的 android.telephony.ims.*；
           # LineageOS cm-14.1（7.1）只有 com.android.ims.internal.*（旧接口）。
           # 把 AOSP 9.0 的整套 IMS 包放进 telephony/java（编译进 telephony-common.jar）。
-          SRC="$GITHUB_WORKSPACE/ims-compat/src/android/telephony/ims"
-          test -d "$SRC"
-          DST=frameworks/base/telephony/java/android/telephony/ims
-          mkdir -p "$DST"
-          cp -r "$SRC/." "$DST/"
-          echo "注入文件数: $(find "$DST" -type f | wc -l)"
-          find "$DST" -maxdepth 1 -type d | sort
+          S="$GITHUB_WORKSPACE/ims-compat/src"
+          test -d "$S"
+          # android.telephony.ims.* -> frameworks/base/telephony/java/
+          mkdir -p frameworks/base/telephony/java/android/telephony/ims
+          cp -r "$S/android/telephony/ims/." frameworks/base/telephony/java/android/telephony/ims/
+          # com.android.ims.* -> frameworks/base/telephony/java/
+          mkdir -p frameworks/base/telephony/java/com/android/ims/internal
+          cp -r "$S/com/android/ims/." frameworks/base/telephony/java/com/android/ims/
+          # android.annotation.CallbackExecutor -> frameworks/base/core/java/
+          mkdir -p frameworks/base/core/java/android/annotation
+          cp -r "$S/android/annotation/." frameworks/base/core/java/android/annotation/
+          echo "注入完成:"
+          echo "  telephony/ims: $(find frameworks/base/telephony/java/android/telephony/ims -type f | wc -l) 文件"
+          echo "  com/android/ims: $(find frameworks/base/telephony/java/com/android/ims -type f | wc -l) 文件"
+          ls frameworks/base/core/java/android/annotation/CallbackExecutor.java
 
       - name: 7. 编译
         timeout-minutes: 240
