@@ -501,24 +501,31 @@ jobs:
           t = open(mk, encoding='utf-8').read()
           base = 'frameworks/base/'
           paths = []
+          skip = []
           for pat in ['telephony/java/android/telephony/ims/**/*.aidl',
                       'telephony/java/com/android/ims/**/*.aidl']:
               for p in sorted(glob.glob(base + pat, recursive=True)):
                   rel = p[len(base):]
                   if rel.endswith('ImsConfigListener.aidl'):
                       continue  # 7.1 已注册
+                  body = open(p, encoding='utf-8', errors='replace').read()
+                  # Android 7.1 的 aidl 拒绝生成 parcelable（8.0+ 才支持），
+                  # 而 9.0 的数据类 .java 已自带 Parcelable 实现，所以只注册 interface。
+                  if 'parcelable' in body and 'interface' not in body:
+                      skip.append(rel); continue
                   paths.append(rel)
           block = ''.join('\t%s \\\n' % p for p in paths)
           anchor = '\ttelephony/java/com/android/internal/telephony/ISmsSecurityAgent.aidl \\\n'
           if anchor not in t:
               print('FAIL: 找不到锚点'); sys.exit(1)
-          if paths[0] in t:
+          if paths and paths[0] in t:
               print('已注册过，跳过'); sys.exit(0)
           t = t.replace(anchor, anchor + block, 1)
           open(mk, 'w', encoding='utf-8', newline='\n').write(t)
-          print('注册 %d 个 aidl:' % len(paths))
-          for p in paths:
-              print('   ', p)
+          print('注册 %d 个 interface aidl:' % len(paths))
+          for p in paths: print('   ', p)
+          print('跳过 %d 个 parcelable aidl（7.1 不支持）:' % len(skip))
+          for p in skip: print('   ', p)
           PYEOF
           grep -c "\.aidl" "$MK"
 
