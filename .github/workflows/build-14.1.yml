@@ -465,7 +465,9 @@ jobs:
           # LineageOS cm-14.1（7.1）只有 com.android.ims.internal.*（旧接口）。
           # 把 AOSP 9.0 的整套 IMS 包放进 telephony/java（编译进 telephony-common.jar）。
           S="$GITHUB_WORKSPACE/ims-compat/src"
-          test -d "$S"
+          echo "WORKSPACE=$GITHUB_WORKSPACE"
+          ls -la "$GITHUB_WORKSPACE/ims-compat" 2>&1 | head -5
+          test -d "$S" || { echo "FAIL: $S 不存在"; exit 1; }
           # android.telephony.ims.* -> frameworks/base/telephony/java/
           mkdir -p frameworks/base/telephony/java/android/telephony/ims
           cp -r "$S/android/telephony/ims/." frameworks/base/telephony/java/android/telephony/ims/
