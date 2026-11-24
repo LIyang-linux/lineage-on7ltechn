@@ -39,7 +39,6 @@ import com.android.ims.internal.IImsCallSession;
 import com.android.ims.internal.IImsEcbm;
 import com.android.ims.internal.IImsMultiEndpoint;
 import com.android.ims.internal.IImsUt;
-import android.telephony.ims.ImsCallSession;
 import com.android.internal.annotations.VisibleForTesting;
 
 import java.lang.annotation.Retention;

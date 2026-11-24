@@ -19,13 +19,11 @@ package android.telephony.ims.stub;
 import android.annotation.SystemApi;
 import android.os.Message;
 import android.os.RemoteException;
-import android.telephony.ims.ImsCallSessionListener;
 import android.telephony.ims.aidl.IImsCallSessionListener;
 
 import android.telephony.ims.ImsCallProfile;
 import android.telephony.ims.ImsReasonInfo;
 import android.telephony.ims.ImsStreamMediaProfile;
-import android.telephony.ims.ImsCallSession;
 import com.android.ims.internal.IImsCallSession;
 import com.android.ims.internal.IImsVideoCallProvider;
 import android.telephony.ims.ImsVideoCallProvider;
