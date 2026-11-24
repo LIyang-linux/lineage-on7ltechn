@@ -457,6 +457,21 @@ jobs:
           fi
           echo OK
 
+      - name: 6.15 注入 Android 9 IMS 包（android.telephony.ims.*，7.1 缺失）
+        working-directory: /mnt/build
+        run: |
+          set -e
+          # SM8250 的 imsservice.apk 需要 Android 9 引入的 android.telephony.ims.*；
+          # LineageOS cm-14.1（7.1）只有 com.android.ims.internal.*（旧接口）。
+          # 把 AOSP 9.0 的整套 IMS 包放进 telephony/java（编译进 telephony-common.jar）。
+          SRC="$GITHUB_WORKSPACE/ims-compat/src/android/telephony/ims"
+          test -d "$SRC"
+          DST=frameworks/base/telephony/java/android/telephony/ims
+          mkdir -p "$DST"
+          cp -r "$SRC/." "$DST/"
+          echo "注入文件数: $(find "$DST" -type f | wc -l)"
+          find "$DST" -maxdepth 1 -type d | sort
+
       - name: 7. 编译
         timeout-minutes: 240
         working-directory: /mnt/build
