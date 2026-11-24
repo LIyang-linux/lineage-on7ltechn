@@ -99,13 +99,30 @@
       已刷入真机：可开机、可短信、4G 数据正常；纯 2G 无服务（当地 2G 已退网，属预期）。
       `ril.ims.ltevoicesupport=1` / `ril.ims.ecsupport=2` 说明 modem 能力位已打开。
 - [ ] 阶段 A 剩余：回退包整理（原版 modem 备份在 `原厂备份/modem.vfat.win`）
-- [~] 阶段 B（6–12）：注入 `android.telephony.ims.*`（68 个文件，含数据类/aidl/stub），
-      7.1 缺失的 `IntDef.prefix()`、`RemoteCallbackList.broadcast()` 已本地打补丁。
-      当前卡在编译验证：`b0800a4` 因 parcelable aidl 被移出 include 目录而失败，
-      `cf47452` 已修正（parcelable aidl 留在 `telephony/java` 下，天然在 `-I` 路径内）。
+- [~] 阶段 B（6–12）：进行中。
+  - ✅ **framework 已编译通过**：`android.telephony.ims.*` 注入 frameworks/base，
+    含 `IntDef.prefix()` / `RemoteCallbackList.broadcast()` 补丁、AIDL 注册、
+    `ImsCallSessionListener`、`com.android.ims.ImsConfig/ImsException`、
+    `ImsSsInfo$Builder`、三星私有 `ISecImsMmTelEventListener`。
+  - ⏳ **当前卡在** `frameworks/opt/net/ims`（旧 IMS 库 `ims-common`，telephony-common 依赖它）：
+    接口换成 9.0 版后它编译不过（81 个错误）。已加步骤 6.17 跑
+    `ims-compat/patches/fix_ims_common.py`：① 旧数据类 → `android.telephony.ims.*`
+    （含同包简单名替换）② 去掉失效的 `@Override` ③ 给 `*Stub` 内部类补 9.0 新增
+    抽象方法的空实现（全限定 `android.os.RemoteException`）。
+    **待验证**：`a7deb7c` 那轮已把错误从 81 降到 ~20；剩下的是同包简单名引用
+    （脚本已加处理）和个别 Stub 缺方法，下一轮 CI 确认。
+  - apk 侧已扫清：SM8250 imsservice 引用 36 个 IMS 类，只缺 `ImsSsInfo$Builder`
+    与 `ISecImsMmTelEventListener`，均已补齐。
 - [ ] 阶段 C（13–16）
 - [ ] 阶段 D（17–18）
 - [ ] 阶段 E（19–20）
+
+### 下一轮（明天）建议顺序
+
+1. 触发最新提交的构建，看 `ims-common` 是否过关。
+2. 若过关，往下会依次暴露 telephony-common / services / APK 打包的错误。
+3. 留意跨 jar 重复类：`ims-common.jar`/`telephony-common.jar` 已有
+   `com.android.ims.ImsException`，framework 里新增的同类以 framework.jar 优先。
 
 ---
 

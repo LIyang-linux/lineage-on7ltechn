@@ -30,32 +30,44 @@ TYPE_MAP = {
 
 # 9.0 相比 7.1 新增的抽象方法（按接口分组的空实现）。
 # 每项 = (去重用的特征串, 方法代码)；特征串已存在于类体中就不再重复插入。
+# 注意用全限定名，旧库有些文件没 import RemoteException / 新数据类。
 STUBS = {
     'IImsCallSessionListener': [
         ('callSessionMayHandover(', 'public void callSessionMayHandover('
          'com.android.ims.internal.IImsCallSession session,'
-         ' int srcAccessTech, int targetAccessTech) throws RemoteException { }'),
+         ' int srcAccessTech, int targetAccessTech)'
+         ' throws android.os.RemoteException { }'),
         ('callSessionRttModifyRequestReceived(', 'public void '
          'callSessionRttModifyRequestReceived('
          'com.android.ims.internal.IImsCallSession session,'
-         ' android.telephony.ims.ImsCallProfile callProfile) throws RemoteException { }'),
+         ' android.telephony.ims.ImsCallProfile callProfile)'
+         ' throws android.os.RemoteException { }'),
         ('callSessionRttModifyResponseReceived(', 'public void '
          'callSessionRttModifyResponseReceived(int status)'
-         ' throws RemoteException { }'),
+         ' throws android.os.RemoteException { }'),
         ('callSessionRttMessageReceived(', 'public void callSessionRttMessageReceived('
-         'String rttMessage) throws RemoteException { }'),
+         'String rttMessage) throws android.os.RemoteException { }'),
     ],
     'IImsUtListener': [
         ('onSupplementaryServiceIndication(', 'public void '
          'onSupplementaryServiceIndication('
-         'android.telephony.ims.ImsSsData ssData) throws RemoteException { }'),
+         'android.telephony.ims.ImsSsData ssData)'
+         ' throws android.os.RemoteException { }'),
     ],
     # setCamera 是"同名不同参数"的重载，用完整签名去重
     'IImsVideoCallProvider': [
         ('setCamera(String cameraId, int uid)', 'public void setCamera('
-         'String cameraId, int uid) throws RemoteException { }'),
+         'String cameraId, int uid) throws android.os.RemoteException { }'),
     ],
 }
+
+# 同一个类在旧包里也可能被简单名引用（尤其是 com/android/ims 包内的文件），
+# 这里按"非 . / 单词字符"的前缀匹配来替换简单名。
+SIMPLE_NAMES = [
+    'ImsCallProfile', 'ImsStreamMediaProfile', 'ImsReasonInfo', 'ImsSsInfo',
+    'ImsConferenceState', 'ImsSuppServiceNotification', 'ImsExternalCallState',
+    'ImsSsData', 'ImsCallForwardInfo',
+]
 
 STUB_CLASS = re.compile(r'(class\s+\w+\s+extends\s+(?:[\w.$]+\.)?(IIms\w+)\.Stub\s*\{)')
 
@@ -66,6 +78,11 @@ def patch_file(path):
 
     for a, b in TYPE_MAP.items():
         t = t.replace(a, b)
+
+    # 简单名替换（同包/未 import 的写法），先长后短避免误伤
+    for name in SIMPLE_NAMES:
+        t = re.sub(r'(?<![\w.$])' + name + r'\b',
+                   'android.telephony.ims.' + name, t)
 
     t = re.sub(r'^[ \t]*@Override[ \t]*\r?\n', '', t, flags=re.M)
 
