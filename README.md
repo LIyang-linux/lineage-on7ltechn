@@ -18,7 +18,7 @@
 | 目标版本 | workflow | 状态 |
 |---|---|---|
 | LineageOS 15.1 (Android 8.1) | `build.yml` | ✅ 可编译、可刷入、日常可用 |
-| LineageOS 14.1 (Android 7.1.2) | `build-14.1.yml` | 🔧 **双卡修复 + VoLTE 移植进行中**（原单卡，见下节） |
+| LineageOS 14.1 (Android 7.1.2) | `build-14.1.yml` | 🔧 双卡已修好；**VoLTE 移植中**（modem 侧已通，框架已能编译） |
 
 > 7.1.2 是 LineageOS 的版本起点（LineageOS 由 CM14.1 接续而来），更低版本只能找
 > CyanogenMod 12.1 / 13 的归档分支，那些源码树已无人维护，反而更难编译。
@@ -122,8 +122,9 @@ artifact 需要登录 GitHub 才能下载，90 天后过期，长期保存请自
 
 ## 已知问题
 
-- **VoLTE 未通**：移动 4G 下打电话走 CSFB 回落 2G/3G（能打通，但不是 VoLTE）。移植进行中（见上节）
-- **双卡修复在 CI 迭代中**：补丁已全部就位，正在解决编译问题（`ril-daemon2`/`dsds`/framework 容忍空卡槽）
+- **VoLTE 未通**：移动 4G 下打电话走 CSFB 回落 2G/3G（能打通，但不是 VoLTE）。移植进行中（见下节）
+- **双卡已修好**：`SIM_COUNT=2` + `ril-daemon2` + framework 容忍空卡槽，补丁已全部就位并通过编译
+- **IMS 框架已能编译进 ROM**：`android.telephony.ims.*`（Android 9 版）+ 旧 `ims-common`/`telephony-common` 适配完成；但 ROM 里还**没有 IMS 服务端 apk**，所以打电话仍不走 VoLTE
 - **短信可能显示发送失败**：实际已送达但框架判定失败，`RIL_FIX_SMS_NOT_SENT_ERR` 在 7.1 无效
 - **RAM 1.5 GB / 2.0 GB 两个版本**：8.1 上多任务容易杀后台，7.1.2 明显更轻
 - **相机**：部分场景（HDR、闪光灯）可能异常，取决于 blobs 版本
@@ -146,7 +147,14 @@ artifact 需要登录 GitHub 才能下载，90 天后过期，长期保存请自
 **关键结论**：障碍不在 modem，而在 **7.1 缺整套 Android 9 IMS 框架**。项目路线见
 [`docs/volte-port-steps.md`](docs/volte-port-steps.md)（20 步：补框架 → 适配 apk → 注入 modem 配置）。
 
-当前进度：**阶段 B（把 Android 9 的 `android.telephony.ims.*` 移植进 7.1）**，CI 迭代中。
+当前进度：**阶段 B 收尾（框架已能整体编译通过）**，正在往阶段 C/D 走。
+
+- ✅ modem 侧：`volte_co` mcfg 注入并真机验证（开机/短信/4G 正常，`ril.ims.ltevoicesupport=1`）
+- ✅ framework：`android.telephony.ims.*` 68 个文件注入 `frameworks/base`，编译通过
+- ✅ `ims-common`（旧库）+ `telephony-common`（ImsPhone 栈）适配 9.0 接口，编译通过
+- ⏳ 待做：阶段 C 框架方法补丁、阶段 D 三星 IMS apk 打包/签名/SELinux、阶段 E 真机注册与通话
+
+> 最近一次构建 run `45549899449`（2026-11-25）：Java 全过，进度到 39%（V8 编译）。
 
 > 另一条备选路线：直接在 **15.1（8.1）** 上做（8.1 已有 `ImsService` 框架），上层障碍少很多。
 
