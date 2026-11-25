@@ -76,11 +76,15 @@ def patch_file(path):
     t = open(path, encoding='utf-8').read()
     orig = t
 
+    # 全限定名替换（带词边界，避免 ImsExternalCallState 误伤 ImsExternalCallStateListener）
     for a, b in TYPE_MAP.items():
-        t = t.replace(a, b)
+        t = re.sub(r'(?<![\w.$])' + re.escape(a) + r'\b', b, t)
 
-    # 简单名替换（同包/未 import 的写法），先长后短避免误伤
+    # 简单名替换：仅当该文件没有 import 同名类时才做
+    # （比如 TelephonyMetrics 里 import 的是 TelephonyProto.ImsReasonInfo，不能乱改）
     for name in SIMPLE_NAMES:
+        if re.search(r'^import .*\.' + name + r';', t, re.M):
+            continue
         t = re.sub(r'(?<![\w.$])' + name + r'\b',
                    'android.telephony.ims.' + name, t)
 

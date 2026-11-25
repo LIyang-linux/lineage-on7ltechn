@@ -34,6 +34,13 @@ public final class ImsReasonInfo implements Parcelable {
     public static final int CODE_UNSPECIFIED = 0;
 
     /**
+     * 7.1 兼容常量：9.0 已移除，但旧调用方（ImsPhoneCallTracker 等）还在用。
+     * @hide
+     * @deprecated 用 {@link #CODE_UNSPECIFIED}
+     */
+    public static final int CODE_NORMAL_UNSPECIFIED = 31;
+
+    /**
      * LOCAL
      */
     // IMS -> Telephony
