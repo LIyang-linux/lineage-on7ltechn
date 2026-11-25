@@ -665,4 +665,31 @@ public final class ImsCallProfile implements Parcelable {
     private static boolean isVideoStateSet(int videoState, int videoStateToCheck) {
         return (videoState & videoStateToCheck) == videoStateToCheck;
     }
+
+    // ==== 来电号码验证状态（ATIS-1000082 / STIR-SHAKEN）----
+    // 9.0 的 ImsCallProfile 没有这组 API，SM8250 imsservice.apk（Android 10/11）会调用
+    // setCallerNumberVerificationStatus(int)，这里按 Android 11 的实现补上。
+
+    /** 网络未能验证该号码。 */
+    public static final int VERIFICATION_STATUS_NOT_VERIFIED = 0;
+    /** 网络验证通过（大概率是真实来源）。 */
+    public static final int VERIFICATION_STATUS_PASSED = 1;
+    /** 网络验证失败（大概率不是真实来源）。 */
+    public static final int VERIFICATION_STATUS_FAILED = 2;
+
+    /** @hide */
+    private int mCallerNumberVerificationStatus = VERIFICATION_STATUS_NOT_VERIFIED;
+
+    /**
+     * 设置来电号码的验证状态。IMS 服务应从 SIP INVITE 的 P-Asserted-Identity / From 头里解析。
+     * @hide
+     */
+    public void setCallerNumberVerificationStatus(int callerNumberVerificationStatus) {
+        mCallerNumberVerificationStatus = callerNumberVerificationStatus;
+    }
+
+    /** @hide */
+    public int getCallerNumberVerificationStatus() {
+        return mCallerNumberVerificationStatus;
+    }
 }
