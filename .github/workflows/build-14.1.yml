@@ -593,6 +593,10 @@ jobs:
           export PATH=$JAVA_HOME/bin:$PATH
           # Jack 服务端默认堆太小，16G 机器给到 6G
           export JACK_SERVER_VM_ARGUMENTS="-Dfile.encoding=UTF-8 -XX:+TieredCompilation -Xmx4g"
+          # 我们往 framework 里新增了 android.telephony.ims.* 三个公开包，
+          # 不在已批准的 system-api 白名单里，checkapi 会以 "Added package" 拦下构建。
+          # apicheck.mk 第 21 行支持 WITHOUT_CHECK_API=true 整体跳过（定制 ROM 常规做法）。
+          export WITHOUT_CHECK_API=true
           java -version
           source build/envsetup.sh
           # 14.1 的 breakfast 会先跑 vendor/cm/tools/roomservice.py，失败时静默退出；
