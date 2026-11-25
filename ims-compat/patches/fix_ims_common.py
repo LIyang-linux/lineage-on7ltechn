@@ -92,6 +92,12 @@ def patch_file(path):
     # setCamera 变成 (String,int)
     t = t.replace('mVideoCallProvider.setCamera(cameraId)',
                   'mVideoCallProvider.setCamera(cameraId, -1)')
+    # 9.0 的 IImsCallSession.setListener 收的是 android.telephony.ims.aidl.IImsCallSessionListener，
+    # 而旧库手里的 IImsCallSessionListenerProxy 继承的是旧包接口（同名不同包，方法还多一个 session 参数），
+    # 无法直接传。旧 IMS 呼叫路径本来就被三星新 IMS 服务取代，这里先传 null 保证编译，后续要用的话再补适配器。
+    t = t.replace('iSession.setListener(new IImsCallSessionListenerProxy());',
+                  'iSession.setListener(null); '
+                  '// TODO 旧库只有旧包监听器，暂不注册（见 fix_ims_common.py 说明）')
 
     added = []
     # 逐个内部类处理（插入会改变偏移，所以每次重新查找）
