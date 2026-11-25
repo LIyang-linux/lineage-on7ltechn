@@ -28,8 +28,10 @@ jobs:
           build-mount-path-ownership: runner:runner
           root-reserve-mb: 10240
           temp-reserve-mb: 4096
-          # swap 16G：framework/dex2oat 峰值内存大，4G 会 OOM；再大会挤占编译磁盘
-          swap-size-mb: 16384
+          # swap 从 16G 降到 4G：这块 swap 是 lvcreate 在虚拟盘上切的，
+          # 和 out/ 共用 IO；V8 高负载下一旦换页，整盘延迟飙升会把 runner 心跳拖死
+          # （前两次都在约 100 分钟、编译 V8 阶段失连）。4G 只做安全阀，配合 -j2 够用。
+          swap-size-mb: 4096
           remove-dotnet: 'true'
           remove-android: 'true'
           remove-haskell: 'true'
