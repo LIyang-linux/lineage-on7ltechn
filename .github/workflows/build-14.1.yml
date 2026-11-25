@@ -13,7 +13,7 @@ on:
       jobs:
         description: 'Parallel jobs (-jx)'
         required: false
-        default: '4'
+        default: '2'
 
 jobs:
   build:
@@ -600,7 +600,7 @@ jobs:
           # 用 script 分配 pty，既能强制行缓冲拿到完整日志，又保留 mka 的语义。
           set -o pipefail
           # script -c 会新起一个 sh，里面没有 mka 函数，必须重新 source + lunch
-          script -qfec "bash -c 'source build/envsetup.sh >/dev/null && lunch lineage_on7ltechn-userdebug >/dev/null && mka bacon -j3'" build.log &
+          script -qfec "bash -c 'source build/envsetup.sh >/dev/null && lunch lineage_on7ltechn-userdebug >/dev/null && mka bacon -j2'" build.log &
           SPID=$!
           tail -n +1 -f build.log --pid=$SPID 2>/dev/null | grep --line-buffered -E '^\[ *[0-9]+%|^Install|^Package|^FAILED|error:|ninja: build stopped|^PLATFORM_VERSION|system\.img|boot\.img' &
           GPID=$!
