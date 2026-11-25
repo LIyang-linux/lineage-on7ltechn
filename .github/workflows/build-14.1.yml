@@ -563,6 +563,12 @@ jobs:
           #   3) 补 9.0 新增抽象方法的空实现
           test -d frameworks/opt/net/ims/src/java || { echo "FAIL: frameworks/opt/net/ims 不存在"; exit 1; }
           python3 "$GITHUB_WORKSPACE/repo-src/ims-compat/patches/fix_ims_common.py" frameworks/opt/net/ims
+          # telephony-common 里的 ImsPhone/ImsSMSDispatcher 也大量用旧数据类，同样处理
+          if [ -d frameworks/opt/telephony/src/java ]; then
+            python3 "$GITHUB_WORKSPACE/repo-src/ims-compat/patches/fix_ims_common.py" frameworks/opt/telephony
+          else
+            echo "WARN: frameworks/opt/telephony 不存在，跳过"
+          fi
 
       - name: 7. 编译
         timeout-minutes: 240
