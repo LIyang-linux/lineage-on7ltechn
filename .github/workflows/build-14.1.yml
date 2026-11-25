@@ -36,6 +36,15 @@ jobs:
           remove-codeql: 'true'
           remove-docker-images: 'true'
 
+      - name: 1a. 降低 swappiness，避免 runner 进程被换出导致心跳失连
+        run: |
+          # 上次构建到 39%（V8 编译）时 runner 直接失连。maximize-build-space 建的 16G swap
+          # 和编译产物同在 /mnt/build，IO 抢占会把 runner 常驻进程一起拖住/换出。
+          # 调低 swappiness：内核优先保留匿名页（runner agent、clang/dex2oat），
+          # 只在真正吃紧时才动 swap。
+          sudo sysctl -w vm.swappiness=10
+          echo "swappiness=$(cat /proc/sys/vm/swappiness)"
+
       - name: 1b. 检出仓库（ims-compat 等随仓库走的文件）
         uses: actions/checkout@v4
         with:
