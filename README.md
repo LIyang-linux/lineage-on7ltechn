@@ -83,8 +83,7 @@ artifact 需要登录 GitHub 才能下载，90 天后过期，长期保存请自
 | 各仓库自带 `ril.h` 比 AOSP 旧，缺 `MAX_SOCKET_NAME_LENGTH` | 编译前统一补齐 |
 | `rild` 启动报 `library "libril_shim.so" not found` | 把 `msm8916-common/shim` 的模块加入 `PRODUCT_PACKAGES` |
 | 7.1 的音频 HAL 从 `/system/etc/mixer_paths.xml` 读通路，包内缺失导致完全无声 | 从 17.1 包中提取本机验证过的配置拷入 `/system/etc` |
-| 设备树 `SIM_COUNT := 2`，7.1 的 `libril` 编成多卡后 rild 连不上 `rild2`，每 4 秒崩溃 | **改名原厂服务为 `ril-daemon2`**（对齐 `class_main.sh`）并保留 `libsec-ril-dsds.so` |
-| `init_msm8916.cpp` 写死 `dsds`，空卡槽报 `NOT_READY` 导致 siminfo 不写入、IMEI 重复 | **framework 补丁**：`SubscriptionInfoUpdater` 把 `NOT_READY` 视同 `ABSENT` |
+| 设备树 `SIM_COUNT := 2`，7.1 的 `libril` 编成多卡后 rild 连不上 `rild2`，每 4 秒崩溃 | **`SIM_COUNT := 1`**（每 daemon 一个 socket），并保持原厂的两个 RIL 服务命名 |
 | `-DRIL_FIX_SMS_NOT_SENT_ERR` 是 8.1 才有的宏，7.1 telephony 无引用点（空操作） | 记录在案；若短信仍报错需自行移植对应逻辑 |
 
 ### GPU 超频说明（看芯片体质，别一概而论）
@@ -98,31 +97,18 @@ artifact 需要登录 GitHub 才能下载，90 天后过期，长期保存请自
   稳定再往上。出现任何异常立刻降档。
 - 本仓库的 boot 默认保持原厂 400 MHz（保证任何人刷入都能开机），超频请自行改 DTB。
 
-### 14.1 双卡（结论：**原厂硬件就是单 4G + 副 2G，已放弃双卡目标**）
+### 关于双卡（结论：不做）
 
-我们曾尝试把这台机器做成双卡双待，最终通过**逆向原厂 boot ramdisk**（`init.rilchip.rc`、
-`init.class_main.sh`、`default.prop`）拿到了三星的完整配方：
+逆向原厂 boot ramdisk 后确认：原厂的 RIL 是两个服务（`ril-daemon` + `ril-daemon1/-c 2`），
+且 `ro.telephony.default_network=9,1` —— **slot0 才是 LTE/GSM/WCDMA，副卡被限制为 GSM only**。
+当地移动 2G 已退网，副卡因此必然无服务。详见 `docs/volte-port-steps.md` 的"双卡（已终止）"一节。
 
-| 项 | 原厂值 |
-|---|---|
-| RIL 服务 | `ril-daemon`（无 `-c`）+ `ril-daemon1`（`-c 2`，走 `rild.libpath2`） |
-| 第二个 daemon 何时起 | `persist.radio.multisim.config=dsds/dsda` 或 `ro.multisim.simslotcount=2` |
-| 库 | `rild.libpath=libsec-ril.so` / `rild.libpath2=libsec-ril-dsds.so` |
-| **`ro.telephony.default_network`** | **`9,1`** ← slot0=LTE/GSM/WCDMA，**slot1=GSM only** |
-
-**关键结论**：原厂对副卡的定位就是 **只能 2G**（早期 CMCC DSDS = 主卡 4G + 副卡 2G 语音），
-而当地移动 2G 已经退网 —— 所以"副卡通不了网"是**设计如此**，不是没修好。
-（另外 cm-14.1 的 msm8916-common 把服务命名为 `ril-daemon1`，但 `class_main.sh` 要
-`start ril-daemon2`，名字对不上会导致第二个守护进程从不启动；这个坑我们踩过并记录在 workflow 里。）
-
-因此本项目**回到单卡稳定配置**（`SIM_COUNT := 1` + 双 RIL 服务），把精力转向 VoLTE。
-
-> 验收标准（历史）：两个卡槽各插一次 SIM 都能识别 —— 这一条曾经达到过。
+因此本项目是**单卡机**：构建配置为 `SIM_COUNT := 1` + 原厂形态的两个 RIL 服务命名，
+主槽（slot0）稳定可用，VoLTE 是当前唯一的主线目标。
 
 ## 已知问题
 
 - **VoLTE 未通**：移动 4G 下打电话走 CSFB 回落 2G/3G（能打通，但不是 VoLTE）。移植进行中（见下节）
-- **双卡不做**：逆向原厂固件确认副卡被限制为 GSM only（`ro.telephony.default_network=9,1`），而当地移动 2G 已退网 → 副卡必然无服务。项目回归**单卡稳定配置**
 - **IMS 框架已能编译进 ROM**：`android.telephony.ims.*`（Android 9 版）+ 旧 `ims-common`/`telephony-common` 适配完成；但 ROM 里还**没有 IMS 服务端 apk**，所以打电话仍不走 VoLTE
 - **短信可能显示发送失败**：实际已送达但框架判定失败，`RIL_FIX_SMS_NOT_SENT_ERR` 在 7.1 无效
 - **RAM 1.5 GB / 2.0 GB 两个版本**：8.1 上多任务容易杀后台，7.1.2 明显更轻
