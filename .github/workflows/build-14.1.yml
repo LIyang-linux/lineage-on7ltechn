@@ -24,7 +24,7 @@ jobs:
       - name: 取 IMS apk 源码树（smali/res）
         run: |
           set -e
-          mkdir -p /mnt/build/work && cd /mnt/build/work
+          mkdir -p $GITHUB_WORKSPACE/work && cd $GITHUB_WORKSPACE/work
           curl -sSL --ssl-no-revoke \
             https://github.com/SolidEva/sm8250-samsung-imsservice-apk/archive/refs/heads/master.tar.gz \
             | tar xz
@@ -43,7 +43,7 @@ jobs:
       - name: 打包 com.sec.imsservice.apk
         run: |
           set -e
-          cd /mnt/build/work/imssrc
+          cd $GITHUB_WORKSPACE/work/imssrc
           java -jar /tmp/apktool.jar b -f -o ../com.sec.imsservice-unsigned.apk . 2>&1 | tail -25
           ls -la ../com.sec.imsservice-unsigned.apk
           unzip -l ../com.sec.imsservice-unsigned.apk | tail -5
@@ -638,17 +638,17 @@ jobs:
           cp "$APK" "$D/com.sec.imsservice.apk"
           cp "$GITHUB_WORKSPACE/repo-src/ims-compat/prebuilt/etc/permissions/"*.xml "$D/etc/permissions/"
           cat > "$D/Android.mk" <<'MK'
-LOCAL_PATH := $(call my-dir)
-include $(CLEAR_VARS)
-LOCAL_MODULE := imsservice
-LOCAL_SRC_FILES := com.sec.imsservice.apk
-LOCAL_MODULE_CLASS := APPS
-LOCAL_MODULE_TAGS := optional
-LOCAL_PRIVILEGED_MODULE := true
-LOCAL_CERTIFICATE := platform
-LOCAL_DEX_PREOPT := false
-include $(BUILD_PREBUILT)
-MK
+          LOCAL_PATH := $(call my-dir)
+          include $(CLEAR_VARS)
+          LOCAL_MODULE := imsservice
+          LOCAL_SRC_FILES := com.sec.imsservice.apk
+          LOCAL_MODULE_CLASS := APPS
+          LOCAL_MODULE_TAGS := optional
+          LOCAL_PRIVILEGED_MODULE := true
+          LOCAL_CERTIFICATE := platform
+          LOCAL_DEX_PREOPT := false
+          include $(BUILD_PREBUILT)
+          MK
           P=device/samsung/on7ltechn/device.mk
           grep -q "PRODUCT_PACKAGES += imsservice" "$P" || echo 'PRODUCT_PACKAGES += imsservice' >> "$P"
           for x in imscm.xml imsmanager_library.xml; do
