@@ -65,7 +65,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: imsservice-apk
-          path: $GITHUB_WORKSPACE/ims-apk
+          path: ${{ github.workspace }}/ims-apk
 
       - name: 1. 清理磁盘并扩容
         uses: easimon/maximize-build-space@master
