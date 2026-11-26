@@ -16,11 +16,57 @@ on:
         default: '2'
 
 jobs:
+  # ── job 1：把三星 IMS apk 打出来（apktool，源码来自公开仓库） ─────────────
+  ims-apk:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: 取 IMS apk 源码树（smali/res）
+        run: |
+          set -e
+          mkdir -p /mnt/build/work && cd /mnt/build/work
+          curl -sSL --ssl-no-revoke \
+            https://github.com/SolidEva/sm8250-samsung-imsservice-apk/archive/refs/heads/master.tar.gz \
+            | tar xz
+          mv sm8250-samsung-imsservice-apk-master imssrc
+          ls imssrc | head
+
+      - name: 准备 JDK8 + apktool
+        run: |
+          set -e
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq openjdk-8-jre-headless
+          curl -sSL --ssl-no-revoke -o /tmp/apktool.jar \
+            https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar
+          java -version 2>&1 | head -2
+
+      - name: 打包 com.sec.imsservice.apk
+        run: |
+          set -e
+          cd /mnt/build/work/imssrc
+          java -jar /tmp/apktool.jar b -f -o ../com.sec.imsservice-unsigned.apk . 2>&1 | tail -25
+          ls -la ../com.sec.imsservice-unsigned.apk
+          unzip -l ../com.sec.imsservice-unsigned.apk | tail -5
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: imsservice-apk
+          path: work/com.sec.imsservice-unsigned.apk
+          retention-days: 7
+
+  # ── job 2：编译 ROM（依赖 job 1 的 apk） ─────────────────────────────────
   build:
+    needs: ims-apk
     runs-on: ubuntu-22.04
     timeout-minutes: 350
 
     steps:
+      - name: 0. 取回 IMS apk（job ims-apk 产物）
+        uses: actions/download-artifact@v4
+        with:
+          name: imsservice-apk
+          path: /mnt/build/ims-apk
+
       - name: 1. 清理磁盘并扩容
         uses: easimon/maximize-build-space@master
         with:
@@ -580,6 +626,36 @@ jobs:
           else
             echo "WARN: frameworks/opt/telephony 不存在，跳过"
           fi
+
+      - name: 6.18 装入三星 IMS apk（priv-app + 平台签名 + 权限 XML）
+        working-directory: /mnt/build
+        run: |
+          set -e
+          APK=$(ls /mnt/build/ims-apk/*.apk 2>/dev/null | head -1)
+          test -n "$APK" && test -f "$APK" || { echo "FAIL: 没拿到 job ims-apk 的产物"; exit 1; }
+          D=device/samsung/on7ltechn/ims-prebuilt
+          mkdir -p "$D/etc/permissions"
+          cp "$APK" "$D/com.sec.imsservice.apk"
+          cp "$GITHUB_WORKSPACE/repo-src/ims-compat/prebuilt/etc/permissions/"*.xml "$D/etc/permissions/"
+          cat > "$D/Android.mk" <<'MK'
+LOCAL_PATH := $(call my-dir)
+include $(CLEAR_VARS)
+LOCAL_MODULE := imsservice
+LOCAL_SRC_FILES := com.sec.imsservice.apk
+LOCAL_MODULE_CLASS := APPS
+LOCAL_MODULE_TAGS := optional
+LOCAL_PRIVILEGED_MODULE := true
+LOCAL_CERTIFICATE := platform
+LOCAL_DEX_PREOPT := false
+include $(BUILD_PREBUILT)
+MK
+          P=device/samsung/on7ltechn/device.mk
+          grep -q "PRODUCT_PACKAGES += imsservice" "$P" || echo 'PRODUCT_PACKAGES += imsservice' >> "$P"
+          for x in imscm.xml imsmanager_library.xml; do
+            grep -q "etc/permissions/$x" "$P" || \
+              echo "PRODUCT_COPY_FILES += device/samsung/on7ltechn/ims-prebuilt/etc/permissions/$x:system/etc/permissions/$x" >> "$P"
+          done
+          echo "--- device.mk 尾部 ---"; tail -5 "$P"
 
       - name: 7. 编译
         timeout-minutes: 240

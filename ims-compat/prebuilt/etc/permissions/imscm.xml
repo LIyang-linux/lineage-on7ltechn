@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    原厂（SM-G6000 国行 5.1.1）/etc/permissions/imscm.xml 原样搬运。
+    声明 IMS 连接管理库；7.1 里若没有对应 jar，系统只会告警，不影响启动。
+-->
+<permissions>
+ <library name="com.qti.ims.connectionmanager.imscmlibrary"
+          file="/system/framework/imscmlibrary.jar"/>
+</permissions>

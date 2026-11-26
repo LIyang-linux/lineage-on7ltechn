@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    原厂（SM-G6000 国行 5.1.1）/etc/permissions/imsmanager_library.xml 原样搬运。
+-->
+<permissions>
+    <library name="imsmanager" file="/system/framework/imsmanager.jar"/>
+    <library name="imsmanager-internal" file="/system/framework/imsmanager-internal.jar"/>
+</permissions>
