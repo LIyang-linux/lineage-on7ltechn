@@ -320,39 +320,44 @@ jobs:
           echo 'TARGET_OTA_ASSERT_DEVICE := on7ltechn,o7prolte,o7lte,on7lte' >> "$B"
           grep -n "TARGET_OTA_ASSERT_DEVICE" "$B"
 
-      - name: 6.10 双卡：ril-daemon2 服务（加载 libsec-ril-dsds.so）
+      - name: 6.10 双卡：rild2/rild-debug2 并入主 ril-daemon（libril SIM_COUNT=2 单进程多 socket）
         working-directory: /mnt/build
         run: |
           set -e
-          # 原厂配置里双卡 RIL 服务叫 ril-daemon1（-l libsec-ril-dsds.so -c 2），
-          # 但 init.class_main.sh 在 dsds/dsda 时 start 的是 ril-daemon2 —— 名字对不上，
-          # 所以双卡进程根本起不来。这里把服务名与 start 统一改成 ril-daemon2。
-          # socket rild2/rild-debug2 就定义在该服务里（libril SIM_COUNT=2 会连它）。
+          # libril 的 SIM_COUNT=2 语义：RIL_register() 会在同一个进程里
+          #   startListen(RIL_SOCKET_1)=rild + startListen(RIL_SOCKET_2)=rild2
+          # 这两个控制 socket 必须交给同一个 init 服务；拆成两个服务的话，
+          # 主 daemon 拿不到 rild2 → "Failed to get socket rild2" → exit(-1) 崩溃循环。
+          # （设备树 BoardConfig.mk 原本写的就是 SIM_COUNT := 2。）
           F=device/samsung/msm8916-common/rootdir/etc/init.qcom.rc
           python3 - "$F" <<'EOF'
-          import sys
+          import re, sys
           p=sys.argv[1]; t=open(p).read()
-          # 1) 幂等：移除旧版误加到 ril-daemon 主服务的 rild2/rild-debug2 socket
-          t=t.replace("""    socket rild-cas stream 660 casdrm mmb
-              socket rild2 stream 660 root radio
-              socket rild-debug2 stream 660 radio system
-          ""","""    socket rild-cas stream 660 casdrm mmb
-          """)
-          # 2) 服务名 ril-daemon1 -> ril-daemon2（匹配 init.class_main.sh）
-          n1 = t.count("service ril-daemon1 ")
-          t = t.replace("service ril-daemon1 ", "service ril-daemon2 ")
-          # 3) start 语句同步改名
-          n2 = t.count("start ril-daemon1")
-          t = t.replace("start ril-daemon1", "start ril-daemon2")
+          # 1) 幂等：清掉旧版本插进主服务的 rild2/rild-debug2
+          t=t.replace("    socket rild-cas stream 660 casdrm mmb\n"
+                      "    socket rild2 stream 660 root radio\n"
+                      "    socket rild-debug2 stream 660 radio system\n",
+                      "    socket rild-cas stream 660 casdrm mmb\n")
+          # 2) 在主服务的 rild-cas 之后插入两个双卡 socket（同一进程共用）
+          a="    socket rild-cas stream 660 casdrm mmb\n"
+          t=t.replace(a, a+"    socket rild2 stream 660 root radio\n"
+                            "    socket rild-debug2 stream 660 radio system\n", 1)
+          # 3) 删掉独立的 ril-daemon1/2 服务块（socket 已并入主服务，避免抢 socket）
+          t=re.sub(r"service ril-daemon[12] /system/bin/rild -l "
+                   r"/system/lib/libsec-ril-dsds\.so -c 2\n(?:    [^\n]*\n)+", "", t)
           open(p,"w").write(t)
-          print("renamed service: %d, renamed start: %d" % (n1, n2))
+          print("merged rild2/rild-debug2 into main ril-daemon service")
           EOF
+          # class_main.sh 不必再起第二个 daemon（两个 socket 已由主服务接管）
+          S=device/samsung/msm8916-common/rootdir/etc/init.class_main.sh
+          sed -i 's/^ *start ril-daemon2$/        # start ril-daemon2 (merged into ril-daemon)/' "$S"
           echo "--- 结果 ---"
-          grep -n "service ril-daemon\|start ril-daemon\|libsec-ril-dsds\|socket rild2" "$F" | head -15
-          # 校验：必须存在 dsds 服务，且没有残留的 ril-daemon1
-          grep -q "service ril-daemon2 /system/bin/rild -l /system/lib/libsec-ril-dsds.so -c 2" "$F" \
-            || { echo "FAIL: ril-daemon2(dsds) 不存在"; exit 1; }
-          ! grep -q "ril-daemon1" "$F" || { echo "FAIL: 仍有 ril-daemon1"; exit 1; }
+          grep -n "service ril-daemon\|socket rild" "$F" | head -12
+          grep -n "ril-daemon2" "$S" || true
+          grep -q "    socket rild2 stream 660 root radio" "$F" \
+            || { echo "FAIL: 主服务缺 rild2 socket"; exit 1; }
+          ! grep -qE "^service ril-daemon[12] " "$F" \
+            || { echo "FAIL: 仍有独立的 ril-daemon1/2 服务"; exit 1; }
           echo OK
 
       - name: 6.11 修 ril_class（7.1 无 SamsungQcomRIL），保持 dsds
@@ -402,25 +407,21 @@ jobs:
           if grep -q 'simslotcount", "1"' "$F"; then echo "FAIL: simslotcount 被改成 1"; exit 1; fi
           echo OK
 
-      - name: 6.13 双卡 RIL：SIM_COUNT 必须为 1（多 daemon / 每 daemon 一个 socket）
+      - name: 6.13 双卡 RIL：SIM_COUNT 必须为 2（libril 单进程多 socket）
         working-directory: /mnt/build
         run: |
           set -e
-          # libril 的 SIM_COUNT 决定 rild 怎么注册 socket：
-          #   =1 → 每个 rild 进程只监听自己的 socket（名字由 -c <id> 改），
-          #        配 init.rc 的 ril-daemon(无 -c) + ril-daemon2(-c 2) 两个服务；
-          #   =2 → 同一个进程同时 startListen(rild)+startListen(rild2)，
-          #        而这两个 socket 分属不同 init 服务，主 daemon 拿不到 rild2
-          #        → "Failed to get socket rild2" → exit(-1) 崩溃循环 → 卡不读。
-          # 实测：SIM_COUNT=2 时 gsm.sim.state=NOT_READY,NOT_READY、ril-daemon restarting。
-          # 框架侧 RIL.java 用 {"rild","rild2"} 分别连 phone0/phone1，两种模式都支持，
-          # 所以保持设备树原值 1。
+          # SIM_COUNT=2 → libril 加 -DANDROID_SIM_COUNT_2，RIL_register() 会在同一进程里
+          # startListen(rild) + startListen(rild2)，并按 socket_id 分发请求
+          # （见 hardware/ril/libril/ril.cpp: s_ril_param_socket2 / findFd）。
+          # 这两个 socket 由步骤 6.10 并入同一个 ril-daemon 服务。
+          # 之前试过 =1（每 daemon 一个 socket）：slot0 能上网但 slot1 永远不驻网。
           F=device/samsung/on7ltechn/BoardConfig.mk
           echo "--- BoardConfig 结果 ---"
           grep -n "SIM_COUNT\|RIL_FIX_SMS" "$F" || true
-          if ! grep -qE '^SIM_COUNT *:*=[ ]*1' "$F"; then
-            echo "FIX: 把 SIM_COUNT 置回 1"
-            sed -i -E 's/^SIM_COUNT *:=.*/SIM_COUNT := 1/' "$F"
+          if ! grep -qE '^SIM_COUNT *:*=[ ]*2' "$F"; then
+            echo "FIX: 把 SIM_COUNT 设为 2"
+            sed -i -E 's/^SIM_COUNT *:=.*/SIM_COUNT := 2/' "$F"
           fi
           grep -n "^SIM_COUNT" "$F"
           echo OK
