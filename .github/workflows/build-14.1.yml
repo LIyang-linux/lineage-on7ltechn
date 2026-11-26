@@ -402,17 +402,27 @@ jobs:
           if grep -q 'simslotcount", "1"' "$F"; then echo "FAIL: simslotcount 被改成 1"; exit 1; fi
           echo OK
 
-      - name: 6.13 保持双卡编译：SIM_COUNT=2
+      - name: 6.13 双卡 RIL：SIM_COUNT 必须为 1（多 daemon / 每 daemon 一个 socket）
         working-directory: /mnt/build
         run: |
           set -e
-          # SIM_COUNT 是 libril/rild 的编译期开关：=2 时加 -DANDROID_SIM_COUNT_2，
-          # rild 会去 connect "rild2"（6.10 已加该 socket）。
-          # 双卡需要保持 2。
+          # libril 的 SIM_COUNT 决定 rild 怎么注册 socket：
+          #   =1 → 每个 rild 进程只监听自己的 socket（名字由 -c <id> 改），
+          #        配 init.rc 的 ril-daemon(无 -c) + ril-daemon2(-c 2) 两个服务；
+          #   =2 → 同一个进程同时 startListen(rild)+startListen(rild2)，
+          #        而这两个 socket 分属不同 init 服务，主 daemon 拿不到 rild2
+          #        → "Failed to get socket rild2" → exit(-1) 崩溃循环 → 卡不读。
+          # 实测：SIM_COUNT=2 时 gsm.sim.state=NOT_READY,NOT_READY、ril-daemon restarting。
+          # 框架侧 RIL.java 用 {"rild","rild2"} 分别连 phone0/phone1，两种模式都支持，
+          # 所以保持设备树原值 1。
           F=device/samsung/on7ltechn/BoardConfig.mk
           echo "--- BoardConfig 结果 ---"
           grep -n "SIM_COUNT\|RIL_FIX_SMS" "$F" || true
-          if grep -q '^SIM_COUNT := 1' "$F"; then echo "FAIL: SIM_COUNT 为 1"; exit 1; fi
+          if ! grep -qE '^SIM_COUNT *:*=[ ]*1' "$F"; then
+            echo "FIX: 把 SIM_COUNT 置回 1"
+            sed -i -E 's/^SIM_COUNT *:=.*/SIM_COUNT := 1/' "$F"
+          fi
+          grep -n "^SIM_COUNT" "$F"
           echo OK
 
       - name: 6.14 双卡第二步：修 framework，容忍空卡槽（NOT_READY）
