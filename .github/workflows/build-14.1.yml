@@ -65,7 +65,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: imsservice-apk
-          path: /mnt/build/ims-apk
+          path: $GITHUB_WORKSPACE/ims-apk
 
       - name: 1. 清理磁盘并扩容
         uses: easimon/maximize-build-space@master
@@ -631,7 +631,7 @@ jobs:
         working-directory: /mnt/build
         run: |
           set -e
-          APK=$(ls /mnt/build/ims-apk/*.apk 2>/dev/null | head -1)
+          APK=$(ls "$GITHUB_WORKSPACE"/ims-apk/*.apk 2>/dev/null | head -1)
           test -n "$APK" && test -f "$APK" || { echo "FAIL: 没拿到 job ims-apk 的产物"; exit 1; }
           D=device/samsung/on7ltechn/ims-prebuilt
           mkdir -p "$D/etc/permissions"
