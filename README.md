@@ -18,7 +18,7 @@
 | 目标版本 | workflow | 状态 |
 |---|---|---|
 | LineageOS 15.1 (Android 8.1) | `build.yml` | ✅ 可编译、可刷入、日常可用 |
-| LineageOS 14.1 (Android 7.1.2) | `build-14.1.yml` | 🔧 双卡已修好；**VoLTE 移植中**（modem 侧已通，框架已能编译） |
+| LineageOS 14.1 (Android 7.1.2) | `build-14.1.yml` | 🔧 **单卡可用**；**VoLTE 移植中**（modem 侧已通，框架已能编译；双卡已确认是原厂硬件限制） |
 
 > 7.1.2 是 LineageOS 的版本起点（LineageOS 由 CM14.1 接续而来），更低版本只能找
 > CyanogenMod 12.1 / 13 的归档分支，那些源码树已无人维护，反而更难编译。
@@ -98,32 +98,31 @@ artifact 需要登录 GitHub 才能下载，90 天后过期，长期保存请自
   稳定再往上。出现任何异常立刻降档。
 - 本仓库的 boot 默认保持原厂 400 MHz（保证任何人刷入都能开机），超频请自行改 DTB。
 
-### 14.1 双卡（已解除单卡化，CI 迭代中）
+### 14.1 双卡（结论：**原厂硬件就是单 4G + 副 2G，已放弃双卡目标**）
 
-早期版本是**单卡**（`SIM_COUNT=1`），当时的原因见下；现已恢复 **DSDS 双卡**：
+我们曾尝试把这台机器做成双卡双待，最终通过**逆向原厂 boot ramdisk**（`init.rilchip.rc`、
+`init.class_main.sh`、`default.prop`）拿到了三星的完整配方：
 
-| 层 | 原单卡做法 | 现双卡做法 |
-|---|---|---|
-| `libril` | `SIM_COUNT := 1` | **`SIM_COUNT := 2`**（编 `-DANDROID_SIM_COUNT_2`，rild 连 `rild2`） |
-| init | `multisim.config=none`、`simslotcount=1` | **保持 `dsds_properties()`**（dsds + simslotcount=2） |
-| framework | `SubscriptionInfoUpdater` 容忍空卡槽 | **打补丁**：把 `NOT_READY` 视同 `ABSENT`，避免 `isAllIccIdQueryDone()` 永远等不到第二个 ICCID |
-| RIL 服务 | 删掉了 `ril-daemon1` | **改名 `ril-daemon2`**（匹配 `init.class_main.sh` 的 `start ril-daemon2`），加载 **`libsec-ril-dsds.so`** |
+| 项 | 原厂值 |
+|---|---|
+| RIL 服务 | `ril-daemon`（无 `-c`）+ `ril-daemon1`（`-c 2`，走 `rild.libpath2`） |
+| 第二个 daemon 何时起 | `persist.radio.multisim.config=dsds/dsda` 或 `ro.multisim.simslotcount=2` |
+| 库 | `rild.libpath=libsec-ril.so` / `rild.libpath2=libsec-ril-dsds.so` |
+| **`ro.telephony.default_network`** | **`9,1`** ← slot0=LTE/GSM/WCDMA，**slot1=GSM only** |
 
-**为什么当初被迫单卡**（两个坑，值得记录）：
+**关键结论**：原厂对副卡的定位就是 **只能 2G**（早期 CMCC DSDS = 主卡 4G + 副卡 2G 语音），
+而当地移动 2G 已经退网 —— 所以"副卡通不了网"是**设计如此**，不是没修好。
+（另外 cm-14.1 的 msm8916-common 把服务命名为 `ril-daemon1`，但 `class_main.sh` 要
+`start ril-daemon2`，名字对不上会导致第二个守护进程从不启动；这个坑我们踩过并记录在 workflow 里。）
 
-- `sec-ril` 对空卡槽只报 `NOT_READY`（不是 `ABSENT`），于是
-  `SubscriptionInfoUpdater.isAllIccIdQueryDone()` 一直等第二个 ICCID → `siminfo`
-  永不写入 → 设置里显示无 SIM；同时 `PhoneFactory` 建两个 Phone 对象 → **IMEI 重复**。
-  **现在改为在 framework 侧容忍 `NOT_READY`**，不再牺牲双卡。
-- 原厂 `init.qcom.rc` 的双卡服务叫 `ril-daemon1`，而 `class_main.sh` 要 `start ril-daemon2`
-  —— **名字对不上**，进程根本起不来。**改名对齐**后才真正打通。
+因此本项目**回到单卡稳定配置**（`SIM_COUNT := 1` + 双 RIL 服务），把精力转向 VoLTE。
 
-> 验收标准：两个卡槽**各插一次 SIM 都能识别**（不要求双卡同时在线）。
+> 验收标准（历史）：两个卡槽各插一次 SIM 都能识别 —— 这一条曾经达到过。
 
 ## 已知问题
 
 - **VoLTE 未通**：移动 4G 下打电话走 CSFB 回落 2G/3G（能打通，但不是 VoLTE）。移植进行中（见下节）
-- **双卡已修好**：`SIM_COUNT=2` + `ril-daemon2` + framework 容忍空卡槽，补丁已全部就位并通过编译
+- **双卡不做**：逆向原厂固件确认副卡被限制为 GSM only（`ro.telephony.default_network=9,1`），而当地移动 2G 已退网 → 副卡必然无服务。项目回归**单卡稳定配置**
 - **IMS 框架已能编译进 ROM**：`android.telephony.ims.*`（Android 9 版）+ 旧 `ims-common`/`telephony-common` 适配完成；但 ROM 里还**没有 IMS 服务端 apk**，所以打电话仍不走 VoLTE
 - **短信可能显示发送失败**：实际已送达但框架判定失败，`RIL_FIX_SMS_NOT_SENT_ERR` 在 7.1 无效
 - **RAM 1.5 GB / 2.0 GB 两个版本**：8.1 上多任务容易杀后台，7.1.2 明显更轻
@@ -154,7 +153,14 @@ artifact 需要登录 GitHub 才能下载，90 天后过期，长期保存请自
 - ✅ `ims-common`（旧库）+ `telephony-common`（ImsPhone 栈）适配 9.0 接口，编译通过
 - ⏳ 待做：阶段 C 框架方法补丁、阶段 D 三星 IMS apk 打包/签名/SELinux、阶段 E 真机注册与通话
 
-> 最近一次构建 run `45549899449`（2026-11-25）：Java 全过，进度到 39%（V8 编译）。
+> **阶段 D 的真实缺口（2026-11-26 清点）**：不是"放个 apk 进去"那么简单。
+> 平台侧负责"发现并绑定 IMS 服务"的胶水类 **`ImsResolver` / `ImsManager`(9.0) /
+> `ImsServiceController` 都不存在**（7.1 只有旧 `com.android.ims.ImsManager`）。
+> 有两条路：① 移植这三个类（工程量大，且要处理 SDK25 缺失 API）；
+> ② 先看三星 apk 能否直接挂在**旧链路**上（它同时实现了 `com.android.ims.internal.*`），
+> 这条更快但未必走得通 —— 下一步就是拿 apk 实测。
+
+> 最近一次构建 run `45639200715`（2026-11-26）：单卡配置（`SIM_COUNT=1` + 双 RIL 服务）。
 
 > 另一条备选路线：直接在 **15.1（8.1）** 上做（8.1 已有 `ImsService` 框架），上层障碍少很多。
 

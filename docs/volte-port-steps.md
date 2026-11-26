@@ -115,20 +115,38 @@
   - apk 侧已扫清：SM8250 imsservice 引用 36 个 IMS 类，只缺 `ImsSsInfo$Builder`
     与 `ISecImsMmTelEventListener`，均已补齐。
 - [ ] 阶段 C（13–16）
-- [ ] 阶段 D（17–18）
+- [ ] 阶段 D（17–18）：**缺口已清点** —— 平台侧负责发现/绑定 IMS 服务的胶水类
+      `ImsResolver`、`ImsManager`(9.0)、`ImsServiceController` **在 7.1 中不存在**；
+      另需把三星 `com.sec.imsservice` apk 打进 ROM（`/system/priv-app` + 权限 XML +
+      平台签名 + SELinux）。路线二选一：① 移植这三个类；② 实测 apk 能否挂在旧链路
+      （它同时实现 `com.android.ims.internal.*`）。
 - [ ] 阶段 E（19–20）
+
+### 双卡（已终止，转为单卡目标）
+
+逆向原厂 boot ramdisk（`init.rilchip.rc` / `init.class_main.sh` / `default.prop`）后确认：
+- 原厂 RIL 是 **两个服务**：`ril-daemon`（无 `-c`）+ `ril-daemon1`（`-c 2`，走 `rild.libpath2`
+  = `libsec-ril-dsds.so`），由 `persist.radio.multisim.config=dsds/dsda` 触发第二个；
+- **`ro.telephony.default_network=9,1`**：slot0 = LTE/GSM/WCDMA，**slot1 = GSM only**。
+
+即原厂副卡本来就是 2G-only（早期 CMCC DSDS 的形态），而当地移动 2G 已退网 →
+"副卡永远搜不到网"是设计限制。我们试过 `SIM_COUNT=1`（双 daemon）、`SIM_COUNT=2`
+（单进程多 socket）、`dsds`/`dsda`、换 dsds 库、改 per-slot network mode，均无法让副卡驻网。
+**结论：项目改为"单卡可用 + VoLTE"**，构建配置回到 `SIM_COUNT := 1` + 双 RIL 服务。
 
 ### 下一轮建议顺序
 
-1. 看 run `45549899449`（提交 `981f5e2`，2026-11-25）结果：Java 全过、到 39%（V8）。
-   若成功即得到第一个"带 IMS 框架"的 ROM zip；失败则按日志继续。
-2. 阶段 C：框架方法补丁（`ServiceState.isPsOnlyReg/getSnapshotStatus`、
-   `INetworkManagementService.getNetworkStatsVideoCall/start-stopNetworkStatsOnPorts`、
-   `UserHandle.SEM_CURRENT`、`TelephonyManager.getGroupIdLevel2` 等）。
-3. 阶段 D：三星 `com.sec.imsservice` apk 打进 ROM + 平台签名 + 权限 XML + SELinux。
-4. 留意跨 jar 重复类：`ims-common.jar`/`telephony-common.jar` 已有
+1. 先拿到"单卡可用"的包（提交 `cb68e38`，run `45639200715`）。
+2. 阶段 D 第一步：把 `volte-kit/sm8250-imsservice`（apktool 树）打成 apk，
+   装进当前 ROM 实测旧链路能不能注册（不需要重做 ROM）。
+3. 若旧链路不通，再评估移植 `ImsResolver`/`ImsManager`/`ImsServiceController`。
+4. 阶段 C 的框架方法补丁按 apk 实际报错推进（候选：`ServiceState.isPsOnlyReg`/
+   `getSnapshotStatus`、`INetworkManagementService.getNetworkStatsVideoCall`/
+   `start-stopNetworkStatsOnPorts`、`UserHandle.SEM_CURRENT`、
+   `TelephonyManager.getGroupIdLevel2` 等）。
+5. 留意跨 jar 重复类：`ims-common.jar`/`telephony-common.jar` 已有
    `com.android.ims.ImsException`，framework 里新增的同类以 framework.jar 优先。
 
 ---
 
-*最后更新：2026-11-25*
+*最后更新：2026-11-26*
