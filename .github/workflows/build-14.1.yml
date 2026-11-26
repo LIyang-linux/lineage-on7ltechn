@@ -657,6 +657,38 @@ jobs:
           done
           echo "--- device.mk 尾部 ---"; tail -5 "$P"
 
+      - name: 6.19 OTA updater-script 固定为本仓库版本
+        working-directory: /mnt/build
+        run: |
+          set -e
+          # 用户指定的 updater-script（含 backuptool 备份/恢复、otasigcheck、
+          # block_image_update、boot.img 写入）。在 edify 生成阶段就替换掉，
+          # 这样 zip 照常签名，不会出现"改完内容签名失效"的问题。
+          S="$GITHUB_WORKSPACE/repo-src/ims-compat/ota/updater-script"
+          test -f "$S" || { echo "FAIL: $S 不存在"; exit 1; }
+          F=build/tools/releasetools/edify_generator.py
+          test -f "$F" || { echo "FAIL: $F 不存在"; exit 1; }
+          python3 - "$F" "$S" <<'EOF'
+          import sys
+          p, ours = sys.argv[1], sys.argv[2]
+          t = open(p).read()
+          old = '''    common.ZipWriteStr(output_zip, "META-INF/com/google/android/updater-script",
+                                 "\\n".join(self.script) + "\\n")'''
+          new = '''    import os as _os
+              _p = %r
+              if _os.path.exists(_p):
+                  with open(_p, "rb") as _f:
+                      _data = _f.read()  # 文本，与原来一致
+              else:
+                  _data = "\\n".join(self.script) + "\\n"
+              common.ZipWriteStr(output_zip, "META-INF/com/google/android/updater-script", _data)''' % ours
+          assert old in t, 'anchor not found'
+          t = t.replace(old, new, 1)
+          open(p, 'w').write(t)
+          print('updater-script overridden:', ours)
+          EOF
+          grep -n "updater-script overridden\|ims-compat/ota" "$F" | head -3
+
       - name: 7. 编译
         timeout-minutes: 240
         working-directory: /mnt/build
