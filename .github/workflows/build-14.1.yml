@@ -678,7 +678,7 @@ jobs:
               _p = %r
               if _os.path.exists(_p):
                   with open(_p, "rb") as _f:
-                      _data = _f.read()  # 文本，与原来一致
+                      _data = _f.read()
               else:
                   _data = "\\n".join(self.script) + "\\n"
               common.ZipWriteStr(output_zip, "META-INF/com/google/android/updater-script", _data)''' % ours
