@@ -30,6 +30,11 @@ jobs:
             | tar xz
           mv sm8250-samsung-imsservice-apk-master imssrc
           ls imssrc | head
+          # 三星 apk 的 minSdk/targetSdk = 30，Android 7.1(SDK25) 会直接拒绝安装：
+          #   PackageManager: Failed to parse ... Requires newer sdk version #30 (current version is #25)
+          # 降到 25（功能面另外再说，先让它能装上）。
+          sed -i "s/minSdkVersion: '[0-9]*'/minSdkVersion: '25'/; s/targetSdkVersion: '[0-9]*'/targetSdkVersion: '25'/" imssrc/apktool.yml
+          grep -A2 "^sdkInfo" imssrc/apktool.yml
 
       - name: 准备 JDK8 + apktool
         run: |
